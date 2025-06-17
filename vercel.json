@@ -1,34 +1,10 @@
 {
   "buildCommand": "cd web && npm ci && npm run build",
   "outputDirectory": "web/dist",
-  "framework": "vite",
-  "installCommand": "cd web && npm ci",
-  "devCommand": "cd web && npm run dev",
-  "cleanUrls": true,
-  "trailingSlash": false,
   "rewrites": [
     {
       "source": "/(.*)",
       "destination": "/index.html"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        {
-          "key": "X-Frame-Options",
-          "value": "DENY"
-        },
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
-        },
-        {
-          "key": "Referrer-Policy",
-          "value": "strict-origin-when-cross-origin"
-        }
-      ]
     }
   ]
 } 
