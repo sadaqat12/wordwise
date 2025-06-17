@@ -85,11 +85,11 @@
 
 #### 7 · Sales Rep Vertical Features
 
-1. Persona toggle ("General" vs "Sales") stored in `persona_metadata`.
-2. "Personalize" button → calls `ai-personalize` with prospect variables.
-3. Tone/brand checker → call `ai-rewrite` with brand voice JSON.
-4. CTA analyzer UI control; integrates with `ai-rewrite`.
-5. Objection type dropdown → calls `ai-objection` to draft reply.
+1. ~~Persona toggle ("General" vs "Sales") stored in `persona_metadata`.~~
+2. ~~"Personalize" button → calls `ai-personalize` with prospect variables.~~
+3. ~~Tone/brand checker → call `ai-rewrite` with brand voice JSON.~~
+4. ~~CTA analyzer UI control; integrates with `ai-rewrite`.~~
+5. ~~Objection type dropdown → calls `ai-objection` to draft reply.~~
 
 ---
 

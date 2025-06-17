@@ -94,6 +94,7 @@ interface AppStore {
   analyzeText: (text: string, documentId?: string) => Promise<Suggestion[]>
   rewriteText: (text: string, rewriteType: string, options?: Record<string, any>) => Promise<string | null>
   personalizeText: (template: string, prospectData: Record<string, any>) => Promise<string | null>
+  handleObjection: (objectionText: string, objectionType: string, context?: string) => Promise<string | null>
 }
 
 // Create store
@@ -272,9 +273,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
   // AI actions
   analyzeText: async (text, documentId) => {
     const { persona } = get()
+    console.log('📡 Store analyzeText called:', {
+      textLength: text.length,
+      textPreview: text.substring(0, 100),
+      persona,
+      documentId
+    })
+    
     set({ isAnalyzing: true })
     
     try {
+      console.log('🚀 Calling ai-analyze function...')
       const { data, error } = await supabase.functions.invoke('ai-analyze', {
         body: {
           text,
@@ -283,10 +292,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
         }
       })
       
-      if (error) throw error
+      console.log('📨 AI function response:', { data, error })
+      
+      if (error) {
+        console.error('❌ Supabase function error:', error)
+        throw error
+      }
+      
+      if (!data) {
+        console.error('❌ No data returned from AI function')
+        throw new Error('No data returned from AI analysis function')
+      }
       
       // Transform AI suggestions to include required fields
       const rawSuggestions = data.suggestions || []
+      console.log('🔄 Raw suggestions from AI:', rawSuggestions)
+      
+      if (rawSuggestions.length === 0) {
+        console.log('ℹ️ AI returned no suggestions for this text')
+      }
+      
       const suggestions = rawSuggestions.map((s: any) => ({
         id: crypto.randomUUID(), // Generate a unique ID
         doc_id: documentId || '',
@@ -300,12 +325,42 @@ export const useAppStore = create<AppStore>((set, get) => ({
         position_end: s.position_end
       }))
       
-      console.log('Processed suggestions with status and ID:', suggestions)
-      set({ suggestions, isAnalyzing: false })
+      console.log('✅ Processed suggestions with status and ID:', suggestions)
+      
+      // Only replace suggestions if we got meaningful results or if this is clearly a new document
+      const currentSuggestions = get().suggestions
+      const shouldReplaceSuggestions = suggestions.length > 0 || currentSuggestions.length === 0
+      
+      if (shouldReplaceSuggestions) {
+        console.log('🔄 Replacing suggestions:', { 
+          newCount: suggestions.length, 
+          oldCount: currentSuggestions.length,
+          reason: suggestions.length > 0 ? 'new suggestions found' : 'no existing suggestions' 
+        })
+        set({ suggestions, isAnalyzing: false })
+      } else {
+        console.log('📌 Keeping existing suggestions - AI returned empty but we have existing ones')
+        set({ isAnalyzing: false })
+      }
+      
       return suggestions
-    } catch (error) {
-      console.error('Error analyzing text:', error)
+    } catch (error: any) {
+      console.error('❌ Error analyzing text:', {
+        error: error.message,
+        stack: error.stack,
+        details: error
+      })
       set({ isAnalyzing: false })
+      
+      // Provide user-friendly error information
+      if (error.message?.includes('fetch')) {
+        console.error('🌐 Network error - check internet connection')
+      } else if (error.message?.includes('auth')) {
+        console.error('🔐 Authentication error - user may need to log in again')
+      } else {
+        console.error('🤖 AI analysis error - the AI service may be temporarily unavailable')
+      }
+      
       return []
     }
   },
@@ -345,6 +400,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return data.personalized_content || null
     } catch (error) {
       console.error('Error personalizing text:', error)
+      return null
+    }
+  },
+  
+  handleObjection: async (objectionText, objectionType, context = '') => {
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-objection', {
+        body: {
+          objection_text: objectionText,
+          objection_type: objectionType,
+          context: context
+        }
+      })
+      
+      if (error) throw error
+      
+      return data.suggested_response || null
+    } catch (error) {
+      console.error('Error handling objection:', error)
       return null
     }
   }
