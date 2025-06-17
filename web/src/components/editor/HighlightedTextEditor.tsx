@@ -279,22 +279,22 @@ export default function HighlightedTextEditor({
     return () => clearTimeout(timeoutId)
   }, [content, highlightSpans, applyHighlights, isTyping])
 
-  // Get all text nodes in an element
-  const getTextNodes = (element: Node): Text[] => {
-    const textNodes: Text[] = []
-    const walker = document.createTreeWalker(
-      element,
-      NodeFilter.SHOW_TEXT,
-      null,
-    )
-    
-    let node
-    while (node = walker.nextNode()) {
-      textNodes.push(node as Text)
-    }
-    
-    return textNodes
-  }
+  // Get all text nodes in an element (unused but kept for future cursor positioning improvements)
+  // const getTextNodes = (element: Node): Text[] => {
+  //   const textNodes: Text[] = []
+  //   const walker = document.createTreeWalker(
+  //     element,
+  //     NodeFilter.SHOW_TEXT,
+  //     null,
+  //   )
+  //   
+  //   let node
+  //   while (node = walker.nextNode()) {
+  //     textNodes.push(node as Text)
+  //   }
+  //   
+  //   return textNodes
+  // }
 
   // Set initial content
   useEffect(() => {

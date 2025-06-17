@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAppStore, supabase } from '../store'
-import type { Document } from '../store'
 
 export function useDocument(docId: string) {
   const { 
