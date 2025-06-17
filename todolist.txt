@@ -6,18 +6,18 @@
 
 #### 0 · Workstation & Accounts
 
-1. Install current **Node**, **package manager** (npm/pnpm), **Git**, **Supabase CLI**, **Vercel CLI**.
-2. Sign up / log in to **GitHub**, **Supabase**, **Vercel**, **OpenAI**.
-3. Collect API keys & store them in a secure password manager.
-4. Add recommended IDE extensions (ESLint, Prettier, Tailwind IntelliSense, etc.).
+1. ~~Install current **Node**, **package manager** (npm/pnpm), **Git**, **Supabase CLI**, **Vercel CLI**.~~
+2. ~~Sign up / log in to **GitHub**, **Supabase**, **Vercel**, **OpenAI**.~~
+3. ~~Collect API keys & store them in a secure password manager.~~
+4. ~~Add recommended IDE extensions (ESLint, Prettier, Tailwind IntelliSense, etc.).~~
 
 ---
 
 #### 1 · Repository & Project Skeleton
 
-1. Create a new GitHub repo named **`wordwise`** (private).
-2. Generate a **React + TypeScript + Vite** project in a `/web` folder.
-3. Add Tailwind CSS config and base stylesheet imports.
+1. ~~Create a new GitHub repo named **`wordwise`** (private).~~
+2. ~~Generate a **React + TypeScript + Vite** project in a `/web` folder.~~
+3. ~~Add Tailwind CSS config and base stylesheet imports.~~
 4. Commit and push the initial scaffold (`main` branch).
 
 ---
@@ -67,7 +67,7 @@
 1. Implement **email link / magic-link** sign-in with Supabase Auth.
 2. Create `/login`, `/dashboard`, `/editor/:docId`, `/insights` routes.
 3. Build a route guard that redirects unauthenticated users to `/login`.
-4. Add a workspace selector & “Create Workspace” modal.
+4. Add a workspace selector & "Create Workspace" modal.
 
 ---
 
@@ -85,8 +85,8 @@
 
 #### 7 · Sales Rep Vertical Features
 
-1. Persona toggle (“General” vs “Sales”) stored in `persona_metadata`.
-2. “Personalize” button → calls `ai-personalize` with prospect variables.
+1. Persona toggle ("General" vs "Sales") stored in `persona_metadata`.
+2. "Personalize" button → calls `ai-personalize` with prospect variables.
 3. Tone/brand checker → call `ai-rewrite` with brand voice JSON.
 4. CTA analyzer UI control; integrates with `ai-rewrite`.
 5. Objection type dropdown → calls `ai-objection` to draft reply.
@@ -102,7 +102,7 @@
 
 #### 9 · Analytics & Feedback Loop
 
-1. Implement email-send action (placeholder “Send” button).
+1. Implement email-send action (placeholder "Send" button).
 2. After send, invoke `analytics-ingest` with `sent` event.
 3. Build cron job or webhook stub for open/reply events (future).
 4. Create simple `/insights` dashboard: list accepted suggestions and basic charts.
@@ -135,7 +135,7 @@
 * Sign-up flow works end-to-end.
 * Generic document shows grammar underlines in < 2 s.
 * Persona switch changes prompt behavior (see different suggestions).
-* “Personalize” button injects prospect opener correctly.
+* "Personalize" button injects prospect opener correctly.
 * Accepting a suggestion updates DB and UI instantly.
 * Edge functions reject unauthenticated calls.
 * Vercel site loads over HTTPS with correct favicon & title.
@@ -161,4 +161,4 @@
 ---
 
 **Execution advice for the dev:**
-Focus on completing each section sequentially—don’t begin Editor work until the backend schema and analyze function are live, and don’t start the Sales features until the core suggestion loop is reliable and < 2 s. Frequent commits, pull-requests, and small merges keep scope manageable.
+Focus on completing each section sequentially—don't begin Editor work until the backend schema and analyze function are live, and don't start the Sales features until the core suggestion loop is reliable and < 2 s. Frequent commits, pull-requests, and small merges keep scope manageable.
