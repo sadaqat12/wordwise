@@ -1,0 +1,184 @@
+# Product Requirements Document (PRD) – **Wordwise 1.0**
+
+**Revision Date:** 16 Jun 2025
+**Author:** ChatGPT (Product Lead)
+
+---
+
+## 1 · Purpose & Vision
+
+Wordwise is an **AI-first, Grammarly-class writing assistant** that serves *any* writer—students, professionals, creators—while delivering **deep, persona-specific “vertical modules.”**
+
+* **Core Layer (Universal)** – Real-time grammar, spelling, style, and vocabulary support usable by every user out-of-the-box.
+* **Vertical Layer (V1: Sales Representative)** – A showcase module that augments the core with sales-specific flows (personalized openers, CTA optimization, objection replies, etc.). Future verticals (Students, Content Creators, etc.) plug in through the same extension points.
+
+---
+
+## 2 · Objectives & Success Metrics
+
+| Goal                          | KPI                                       | Target (90 days post-launch) |
+| ----------------------------- | ----------------------------------------- | ---------------------------- |
+| **Universal Writing Quality** | Suggestion acceptance rate                | ≥ 80 %                       |
+| **System Responsiveness**     | AI round-trip latency (P95)               | ≤ 2 s                        |
+| **Adoption**                  | Weekly active users / sign-ups            | ≥ 50 %                       |
+| **Sales Rep Effectiveness**   | Avg. open-rate lift vs. baseline          | +15 %                        |
+| **Efficiency**                | Draft-to-send time for sales emails (P95) | ≤ 3 min                      |
+| **Reliability**               | Monthly uptime                            | 99.5 %                       |
+
+---
+
+## 3 · Target Users
+
+| Layer           | Audience                                                 | Primary Needs                                                                                               |
+| --------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Core**        | *Any English writer* (students, professionals, creators) | Clean, clear, correct writing with minimal friction                                                         |
+| **Vertical #1** | B2B SaaS **Sales Reps**                                  | Faster personalization, brand-aligned tone, concise value props, high-impact CTAs, quick objection handling |
+
+---
+
+## 4 · User Stories
+
+### 4.1 Universal Core (applies to **all** personas)
+
+| ID      | User Story                                                                                     | Priority |
+| ------- | ---------------------------------------------------------------------------------------------- | -------- |
+| **C-1** | “As a writer, I get real-time grammar and spelling corrections while typing.”                  | P0       |
+| **C-2** | “As a writer, I see clarity & conciseness suggestions that shorten and simplify my sentences.” | P0       |
+| **C-3** | “As a writer, I receive context-appropriate vocabulary alternatives to avoid repetition.”      | P0       |
+| **C-4** | “As a writer, I can accept, reject, or undo suggestions with one click or shortcut.”           | P0       |
+
+### 4.2 Vertical Module #1 – **Sales Representative**
+
+| ID      | User Story                                      | Priority |
+| ------- | ----------------------------------------------- | -------- |
+| **S-1** | Personalized Prospect Openers                   | P0       |
+| **S-2** | Brand-Aligned Tone Adjustment                   | P0       |
+| **S-3** | Conciseness & Clarity Compression (sales focus) | P0       |
+| **S-4** | CTA Optimization                                | P1       |
+| **S-5** | Objection-Handling Smart Replies                | P1       |
+| **S-6** | Outcome-Based Feedback Loop                     | P2       |
+
+---
+
+## 5 · Functional Requirements
+
+| #      | Requirement                                                | Core / Sales | Priority |
+| ------ | ---------------------------------------------------------- | ------------ | -------- |
+| **F0** | Universal Grammarly-equivalent pipeline (C-1 → C-4)        | Core         | P0       |
+| **F1** | “Personalize” button injects opener via prospect variables | Sales        | P0       |
+| **F2** | Tone checker + brand rewrite                               | Sales        | P0       |
+| **F3** | “Tighten” sales-specific conciseness pass                  | Sales        | P0       |
+| **F4** | CTA analyzer & rewrite                                     | Sales        | P1       |
+| **F5** | Objection reply generator                                  | Sales        | P1       |
+| **F6** | Engagement event ingestion (opens, replies)                | Sales        | P1       |
+| **F7** | Insights dashboard (edit impact, tips)                     | Sales        | P2       |
+| **F8** | Workspace settings (brand voice, variables)                | Shared       | P1       |
+| **F9** | Supabase Auth, email & SSO                                 | Shared       | P0       |
+
+---
+
+## 6 · Non-Functional Requirements
+
+* **Performance:** ≤ 2 s LLM response (P95)
+* **Scalability:** 20 k simultaneous sessions at GA
+* **Security & Compliance:** SOC 2 Type II roadmap; GDPR/CCPA ready
+* **Accessibility:** WCAG 2.1 AA
+* **Localization:** English UI; UTF-8 content, RTL-safe styles
+
+---
+
+## 7 · Tech Stack & Architecture
+
+| Layer              | Choice                                                                | Notes                                        |
+| ------------------ | --------------------------------------------------------------------- | -------------------------------------------- |
+| **Frontend**       | React 18 + TypeScript (Vite) • Tailwind • Zustand • Supabase Realtime | Editor → Slate.js or Lexical                 |
+| **Backend**        | Supabase (PostgreSQL)                                                 | Row-level security; JSONB `persona_metadata` |
+| **Edge Functions** | Deno TypeScript on Supabase Edge                                      | Route `/ai/<function>`                       |
+| **LLM**            | OpenAI GPT-4o (streaming)                                             | Persona + feature prompts                    |
+| **Hosting**        | Vercel                                                                | Next.js backend proxy optional               |
+| **Observability**  | Supabase logs • Sentry • DataDog APM                                  |                                              |
+
+### 7.1 Persona Extension Pattern
+
+```mermaid
+graph LR
+A[Editor] -->|Text| B(Core Analyze)
+B --> C{Persona?}
+C -->|None| D(Universal Prompt)
+C -->|Sales| E(Sales Prompt)
+D & E --> F(GPT-4o Stream)
+F --> G(Suggestions Diff)
+```
+
+*Switch driven by `persona` flag + prompt template, no divergent code paths.*
+
+---
+
+## 8 · Data Model (simplified)
+
+| Table               | Columns (key)                                                             | Notes              |
+| ------------------- | ------------------------------------------------------------------------- | ------------------ |
+| `users`             | id, email, name, role                                                     |                    |
+| `workspaces`        | id, name, brand\_voice\_json                                              |                    |
+| `documents`         | id, workspace\_id, content, persona\_metadata JSONB                       | Prospect vars etc. |
+| `suggestions`       | id, doc\_id, type, original, suggestion, persona\_tag, status, confidence |                    |
+| `engagement_events` | id, doc\_id, event\_type, timestamp                                       |                    |
+
+---
+
+## 9 · Milestones & Timeline
+
+| Phase                   | Duration | Deliverables                     |
+| ----------------------- | -------- | -------------------------------- |
+| P0 Planning             | 1 wk     | Final PRD, UI wireframes         |
+| P1 Core Pipeline        | 3 wks    | F0 live (grammar, style, vocab)  |
+| P2 Sales Core           | 3 wks    | S-1 → S-3 functions & UI         |
+| P3 Sales Extras         | 3 wks    | CTA, Objection, Analytics ingest |
+| P4 Insights & Polishing | 2 wks    | Dashboard, accessibility pass    |
+| P5 Beta & Hardening     | 2 wks    | Load tests, security review      |
+| **GA Launch**           | 1 wk     | Demo videos (generic + sales)    |
+
+*Total: 15–16 wks*
+
+---
+
+## 10 · Launch Checklist
+
+* [ ] Universal editor demo (blog post) – passes acceptance tests
+* [ ] Sales workflow demo (cold email → send → opens logged → insights)
+* [ ] Docs & onboarding guides
+* [ ] Basic pricing page (free + sales tier)
+
+---
+
+## 11 · Risks & Mitigations
+
+| Risk                                | L | I | Mitigation                          |
+| ----------------------------------- | - | - | ----------------------------------- |
+| GPT cost spikes                     | M | H | Caching, tiered models              |
+| Feature creep (new personas pre-GA) | H | M | Persona gating behind feature flags |
+| Latency > 2 s                       | M | M | Prompt optimization, edge streaming |
+| PII leakage                         | M | H | Prompt scrubber, encryption, DLP    |
+
+---
+
+## 12 · Open Questions
+
+1. Which email/CRM integrations are first (Gmail API, HubSpot, Outlook)?
+2. Is SOC 2 audit required by GA or post-launch?
+3. Freemium vs. paid-only seat pricing at MVP?
+4. Do we bundle style-guide management for multiple brand voices per workspace?
+
+---
+
+## 13 · Future Roadmap (Post-MVP)
+
+* Vertical #2: Students (ESL essay helper)
+* Vertical #3: Content Creators (SEO-aware blog drafting)
+* In-editor A/B testing & automatic subject-line experiments
+* Mobile companion app
+* Multilingual UI & correction models
+
+---
+
+**Status:** Awaiting stakeholder sign-off to begin Phase P0.

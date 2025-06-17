@@ -1,0 +1,164 @@
+### Wordwise 1.0 – Developer To-Do Checklist
+
+*Granular, order-of-operations tasks a junior dev can follow without code snippets.*
+
+---
+
+#### 0 · Workstation & Accounts
+
+1. Install current **Node**, **package manager** (npm/pnpm), **Git**, **Supabase CLI**, **Vercel CLI**.
+2. Sign up / log in to **GitHub**, **Supabase**, **Vercel**, **OpenAI**.
+3. Collect API keys & store them in a secure password manager.
+4. Add recommended IDE extensions (ESLint, Prettier, Tailwind IntelliSense, etc.).
+
+---
+
+#### 1 · Repository & Project Skeleton
+
+1. Create a new GitHub repo named **`wordwise`** (private).
+2. Generate a **React + TypeScript + Vite** project in a `/web` folder.
+3. Add Tailwind CSS config and base stylesheet imports.
+4. Commit and push the initial scaffold (`main` branch).
+
+---
+
+#### 2 · Supabase Backend
+
+1. Create a **new Supabase project**; record Project URL & anon key.
+2. Initialize Supabase CLI in `/backend` (or repo root).
+3. Define **PostgreSQL schema** for:
+
+   * `workspaces`
+   * `documents`
+   * `suggestions`
+   * `engagement_events`
+4. Push the migration to Supabase.
+5. Enable **Row-Level Security** (RLS) on each table.
+6. Write basic RLS policies (owner-only, workspace membership).
+7. Verify policies in Supabase dashboard (attempt reads/writes as anon).
+
+---
+
+#### 3 · Edge / Serverless Functions
+
+1. Create functions for:
+
+   * `ai-analyze` (grammar/style/vocab)
+   * `ai-rewrite` (tone, tighten)
+   * `ai-personalize` (sales opener)
+   * `ai-objection` (objection response)
+   * `analytics-ingest` (events)
+2. Add **environment variables** for the OpenAI key in Supabase function settings.
+3. Deploy each function; confirm 200-OK response in dashboard tester.
+
+---
+
+#### 4 · Frontend Environment & Config
+
+1. Add `.env.local` with Supabase URL/key placeholders.
+2. Configure Tailwind purge paths and theme tokens.
+3. Set up **ESLint** & **Prettier** configs; add scripts (`lint`, `format`).
+4. Add **Zustand** store skeleton (`content`, `persona`, setters).
+
+---
+
+#### 5 · Authentication & Routing
+
+1. Implement **email link / magic-link** sign-in with Supabase Auth.
+2. Create `/login`, `/dashboard`, `/editor/:docId`, `/insights` routes.
+3. Build a route guard that redirects unauthenticated users to `/login`.
+4. Add a workspace selector & “Create Workspace” modal.
+
+---
+
+#### 6 · Editor Implementation
+
+1. Choose **Slate.js** or **Lexical** rich-text editor.
+2. Render the editor inside `/editor/:docId`.
+3. Load document content from Supabase on mount.
+4. **Debounce** content changes (≈500 ms).
+5. Send debounced text to `ai-analyze`; receive and display suggestions.
+6. Implement suggestion UI (underline + Accept / Reject controls).
+7. Persist edits and suggestion statuses back to Supabase.
+
+---
+
+#### 7 · Sales Rep Vertical Features
+
+1. Persona toggle (“General” vs “Sales”) stored in `persona_metadata`.
+2. “Personalize” button → calls `ai-personalize` with prospect variables.
+3. Tone/brand checker → call `ai-rewrite` with brand voice JSON.
+4. CTA analyzer UI control; integrates with `ai-rewrite`.
+5. Objection type dropdown → calls `ai-objection` to draft reply.
+
+---
+
+#### 8 · Realtime Collaboration (Optional MVP+)
+
+1. Subscribe to `documents` changes via **Supabase Realtime** channel.
+2. Update editor content on remote updates (conflict-free merge strategy).
+
+---
+
+#### 9 · Analytics & Feedback Loop
+
+1. Implement email-send action (placeholder “Send” button).
+2. After send, invoke `analytics-ingest` with `sent` event.
+3. Build cron job or webhook stub for open/reply events (future).
+4. Create simple `/insights` dashboard: list accepted suggestions and basic charts.
+
+---
+
+#### 10 · Quality & Testing
+
+1. Add **unit tests** for state utilities and helper functions.
+2. Add **integration test**: login → create doc → generate suggestion.
+3. Configure **ESLint** and **Prettier** to run on pre-commit via Husky.
+4. Ensure test + lint passes in local dev.
+
+---
+
+#### 11 · CI / CD
+
+1. Create GitHub Actions workflow:
+
+   * install deps
+   * run `lint`
+   * run tests
+2. Connect repo to **Vercel**; set environment variables.
+3. Configure automatic deploy on `main` branch push.
+
+---
+
+#### 12 · Smoke-Test Checklist Before Launch
+
+* Sign-up flow works end-to-end.
+* Generic document shows grammar underlines in < 2 s.
+* Persona switch changes prompt behavior (see different suggestions).
+* “Personalize” button injects prospect opener correctly.
+* Accepting a suggestion updates DB and UI instantly.
+* Edge functions reject unauthenticated calls.
+* Vercel site loads over HTTPS with correct favicon & title.
+
+---
+
+#### 13 · Documentation & Hand-Off
+
+1. **README.md** – setup, scripts, env-var list, common errors.
+2. **CONTRIBUTING.md** – branch strategy, commit style, PR checklist.
+3. **PROMPTS.md** – plain-text prompt templates per function for easy tuning.
+4. Architecture diagram (Mermaid or image) showing frontend ↔ Edge ↔ DB.
+
+---
+
+#### 14 · Post-MVP Stretch Goals
+
+* Gmail / Outlook OAuth integration for real engagement tracking.
+* Role-based workspace permissions (owner, writer, viewer).
+* Mobile responsive polish & PWA manifest.
+* SOC 2 readiness: logging, audit trails, Vercel/GCP scanning.
+
+---
+
+**Execution advice for the dev:**
+Focus on completing each section sequentially—don’t begin Editor work until the backend schema and analyze function are live, and don’t start the Sales features until the core suggestion loop is reliable and < 2 s. Frequent commits, pull-requests, and small merges keep scope manageable.
