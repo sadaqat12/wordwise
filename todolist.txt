@@ -18,68 +18,68 @@
 1. ~~Create a new GitHub repo named **`wordwise`** (private).~~
 2. ~~Generate a **React + TypeScript + Vite** project in a `/web` folder.~~
 3. ~~Add Tailwind CSS config and base stylesheet imports.~~
-4. Commit and push the initial scaffold (`main` branch).
+4. ~~Commit and push the initial scaffold (`main` branch).~~
 
 ---
 
 #### 2 · Supabase Backend
 
-1. Create a **new Supabase project**; record Project URL & anon key.
-2. Initialize Supabase CLI in `/backend` (or repo root).
-3. Define **PostgreSQL schema** for:
+1. ~~Create a **new Supabase project**; record Project URL & anon key.~~
+2. ~~Initialize Supabase CLI in `/backend` (or repo root).~~
+3. ~~Define **PostgreSQL schema** for:~~
 
-   * `workspaces`
-   * `documents`
-   * `suggestions`
-   * `engagement_events`
-4. Push the migration to Supabase.
-5. Enable **Row-Level Security** (RLS) on each table.
-6. Write basic RLS policies (owner-only, workspace membership).
-7. Verify policies in Supabase dashboard (attempt reads/writes as anon).
+   * ~~`workspaces`~~
+   * ~~`documents`~~
+   * ~~`suggestions`~~
+   * ~~`engagement_events`~~
+4. ~~Push the migration to Supabase.~~
+5. ~~Enable **Row-Level Security** (RLS) on each table.~~
+6. ~~Write basic RLS policies (owner-only, workspace membership).~~
+7. ~~Verify policies in Supabase dashboard (attempt reads/writes as anon).~~
 
 ---
 
 #### 3 · Edge / Serverless Functions
 
-1. Create functions for:
+1. ~~Create functions for:~~
 
-   * `ai-analyze` (grammar/style/vocab)
-   * `ai-rewrite` (tone, tighten)
-   * `ai-personalize` (sales opener)
-   * `ai-objection` (objection response)
-   * `analytics-ingest` (events)
-2. Add **environment variables** for the OpenAI key in Supabase function settings.
-3. Deploy each function; confirm 200-OK response in dashboard tester.
+   * ~~`ai-analyze` (grammar/style/vocab)~~
+   * ~~`ai-rewrite` (tone, tighten)~~
+   * ~~`ai-personalize` (sales opener)~~
+   * ~~`ai-objection` (objection response)~~
+   * ~~`analytics-ingest` (events)~~
+2. ~~Add **environment variables** for the OpenAI key in Supabase function settings.~~
+3. ~~Deploy each function; confirm 200-OK response in dashboard tester.~~
 
 ---
 
 #### 4 · Frontend Environment & Config
 
-1. Add `.env.local` with Supabase URL/key placeholders.
-2. Configure Tailwind purge paths and theme tokens.
-3. Set up **ESLint** & **Prettier** configs; add scripts (`lint`, `format`).
-4. Add **Zustand** store skeleton (`content`, `persona`, setters).
+1. ~~Add `.env.local` with Supabase URL/key placeholders. (Manual step)~~
+2. ~~Configure Tailwind purge paths and theme tokens.~~
+3. ~~Set up **ESLint** & **Prettier** configs; add scripts (`lint`, `format`).~~
+4. ~~Add **Zustand** store skeleton (`content`, `persona`, setters).~~
 
 ---
 
 #### 5 · Authentication & Routing
 
-1. Implement **email link / magic-link** sign-in with Supabase Auth.
-2. Create `/login`, `/dashboard`, `/editor/:docId`, `/insights` routes.
-3. Build a route guard that redirects unauthenticated users to `/login`.
-4. Add a workspace selector & "Create Workspace" modal.
+1. ~~Implement **email link / magic-link** sign-in with Supabase Auth.~~
+2. ~~Create `/login`, `/dashboard`, `/editor/:docId`, `/insights` routes.~~
+3. ~~Build a route guard that redirects unauthenticated users to `/login`.~~
+4. ~~Add a workspace selector & "Create Workspace" modal.~~ (Placeholders ready for workspace components)
 
 ---
 
 #### 6 · Editor Implementation
 
-1. Choose **Slate.js** or **Lexical** rich-text editor.
-2. Render the editor inside `/editor/:docId`.
-3. Load document content from Supabase on mount.
-4. **Debounce** content changes (≈500 ms).
-5. Send debounced text to `ai-analyze`; receive and display suggestions.
-6. Implement suggestion UI (underline + Accept / Reject controls).
-7. Persist edits and suggestion statuses back to Supabase.
+1. ~~Choose **Slate.js** or **Lexical** rich-text editor.~~
+2. ~~Render the editor inside `/editor/:docId`.~~
+3. ~~Load document content from Supabase on mount.~~
+4. ~~**Debounce** content changes (≈500 ms).~~
+5. ~~Send debounced text to `ai-analyze`; receive and display suggestions.~~
+6. ~~Implement suggestion UI (underline + Accept / Reject controls).~~
+7. ~~Persist edits and suggestion statuses back to Supabase.~~
 
 ---
 
