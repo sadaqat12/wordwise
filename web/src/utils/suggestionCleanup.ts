@@ -31,7 +31,7 @@ export async function cleanupSuggestionDatabase(): Promise<CleanupStats> {
   }
   
   // Group by document and unique suggestion content
-  const suggestionGroups = new Map<string, any[]>()
+  const suggestionGroups = new Map<string, Array<typeof allSuggestions[0]>>()
   
   allSuggestions.forEach(suggestion => {
     const key = `${suggestion.doc_id}-${suggestion.original}-${suggestion.suggestion}-${suggestion.status}`

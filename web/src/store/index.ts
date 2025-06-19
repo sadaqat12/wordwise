@@ -17,7 +17,7 @@ export interface User {
 export interface Workspace {
   id: string
   name: string
-  brand_voice_json: Record<string, any>
+  brand_voice_json: Record<string, unknown>
   owner_id: string
 }
 
@@ -26,7 +26,7 @@ export interface Document {
   workspace_id: string
   title: string
   content: string
-  persona_metadata: Record<string, any>
+  persona_metadata: Record<string, unknown>
   created_at: string
   updated_at: string
 }
@@ -51,6 +51,7 @@ interface AppStore {
   // Auth state
   user: User | null
   isAuthenticated: boolean
+  isAuthLoading: boolean
   
   // Workspace state
   currentWorkspace: Workspace | null
@@ -68,6 +69,7 @@ interface AppStore {
   
   // Actions
   setUser: (user: User | null) => void
+  setAuthLoading: (loading: boolean) => void
   setCurrentWorkspace: (workspace: Workspace | null) => void
   setWorkspaces: (workspaces: Workspace[]) => void
   setCurrentDocument: (document: Document | null) => void
@@ -92,8 +94,8 @@ interface AppStore {
   
   // AI actions
   analyzeText: (text: string, documentId?: string) => Promise<Suggestion[]>
-  rewriteText: (text: string, rewriteType: string, options?: Record<string, any>) => Promise<string | null>
-  personalizeText: (template: string, prospectData: Record<string, any>) => Promise<string | null>
+  rewriteText: (text: string, rewriteType: string, options?: Record<string, unknown>) => Promise<string | null>
+  personalizeText: (template: string, prospectData: Record<string, unknown>) => Promise<string | null>
   handleObjection: (objectionText: string, objectionType: string, context?: string) => Promise<string | null>
 }
 
@@ -102,6 +104,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   // Initial state
   user: null,
   isAuthenticated: false,
+  isAuthLoading: true, // Start as loading until session check completes
   currentWorkspace: null,
   workspaces: [],
   currentDocument: null,
@@ -113,6 +116,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   
   // Basic setters
   setUser: (user) => set({ user, isAuthenticated: !!user }),
+  setAuthLoading: (loading) => set({ isAuthLoading: loading }),
   setCurrentWorkspace: (currentWorkspace) => set({ currentWorkspace }),
   setWorkspaces: (workspaces) => set({ workspaces }),
   setCurrentDocument: (currentDocument) => set({ currentDocument, content: currentDocument?.content || '' }),
@@ -178,8 +182,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       
       set({ user, isAuthenticated: !!user })
       return { user, error: null }
-    } catch (error: any) {
-      return { user: null, error: error.message }
+    } catch (error) {
+      return { user: null, error: error instanceof Error ? error.message : 'Sign in failed' }
     }
   },
   
@@ -202,8 +206,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       } : null
       
       return { user, error: null }
-    } catch (error: any) {
-      return { user: null, error: error.message }
+    } catch (error) {
+      return { user: null, error: error instanceof Error ? error.message : 'Sign up failed' }
     }
   },
   
@@ -212,6 +216,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({
       user: null,
       isAuthenticated: false,
+      isAuthLoading: false, // Ensure loading is false after sign out
       currentWorkspace: null,
       currentDocument: null,
       content: '',
@@ -335,18 +340,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
         console.log('ℹ️ AI returned no suggestions for this text')
       }
       
-      const suggestions = rawSuggestions.map((s: any) => ({
-        id: s.id || crypto.randomUUID(), // Use database ID if available, fallback to generated ID
-        doc_id: s.doc_id || documentId || '',
-        type: s.type,
-        original: s.original,
-        suggestion: s.suggestion,
-        persona_tag: s.persona_tag || persona,
-        status: s.status || 'pending', // Use database status if available
-        confidence: s.confidence,
-        position_start: s.position_start,
-        position_end: s.position_end
-      }))
+      const suggestions = rawSuggestions.map((s: unknown) => {
+        const suggestion = s as Record<string, unknown>
+        return {
+          id: suggestion.id || crypto.randomUUID(), // Use database ID if available, fallback to generated ID
+          doc_id: suggestion.doc_id || documentId || '',
+          type: suggestion.type,
+          original: suggestion.original,
+          suggestion: suggestion.suggestion,
+          persona_tag: suggestion.persona_tag || persona,
+          status: suggestion.status || 'pending', // Use database status if available
+          confidence: suggestion.confidence,
+          position_start: suggestion.position_start,
+          position_end: suggestion.position_end
+        }
+      })
       
       console.log('✅ Processed suggestions with status and ID:', suggestions)
       
@@ -367,18 +375,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
       
       return suggestions
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      const errorStack = error instanceof Error ? error.stack : undefined
       console.error('❌ Error analyzing text:', {
-        error: error.message,
-        stack: error.stack,
+        error: errorMessage,
+        stack: errorStack,
         details: error
       })
       set({ isAnalyzing: false })
       
       // Provide user-friendly error information
-      if (error.message?.includes('fetch')) {
+      if (errorMessage.includes('fetch')) {
         console.error('🌐 Network error - check internet connection')
-      } else if (error.message?.includes('auth')) {
+      } else if (errorMessage.includes('auth')) {
         console.error('🔐 Authentication error - user may need to log in again')
       } else {
         console.error('🤖 AI analysis error - the AI service may be temporarily unavailable')

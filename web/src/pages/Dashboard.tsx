@@ -20,6 +20,7 @@ const Dashboard = () => {
     setDocuments,
     setCurrentWorkspace,
     createDocument,
+    deleteDocument,
     signOut
   } = useAppStore()
 
@@ -123,6 +124,49 @@ const Dashboard = () => {
     
     if (newDoc) {
       navigate(`/editor/${newDoc.id}`)
+    }
+  }
+
+  const handleDownloadDocument = (doc: typeof documents[0], event: React.MouseEvent) => {
+    event.stopPropagation() // Prevent navigation to editor
+    
+    // Create a blob with the document content
+    const content = doc.content || 'This document is empty.'
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    
+    // Create download link
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${doc.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.txt`
+    
+    // Trigger download
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    // Clean up
+    URL.revokeObjectURL(url)
+  }
+
+  const handleDeleteDocument = async (doc: typeof documents[0], event: React.MouseEvent) => {
+    event.stopPropagation() // Prevent navigation to editor
+    
+    if (!confirm(`Are you sure you want to delete "${doc.title}"? This action cannot be undone.`)) {
+      return
+    }
+    
+    try {
+      const success = await deleteDocument(doc.id)
+      if (success) {
+        console.log(`Document "${doc.title}" deleted successfully`)
+        // The documents list will automatically update via the store
+      } else {
+        alert('Failed to delete document. Please try again.')
+      }
+    } catch (error) {
+      console.error('Error deleting document:', error)
+      alert('Failed to delete document. Please try again.')
     }
   }
 
@@ -309,25 +353,52 @@ const Dashboard = () => {
               return (
                 <div
                   key={doc.id}
-                  onClick={() => navigate(`/editor/${doc.id}`)}
-                  className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer"
+                  className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow relative group"
                 >
-                  <h3 className="font-medium text-gray-900 mb-2 truncate">{doc.title}</h3>
-                  <p className="text-sm text-gray-500 mb-4">
-                    Updated {new Date(doc.updated_at).toLocaleDateString()}
-                  </p>
-                  
-                  {metrics && !isLoadingSuggestions ? (
-                    <WritingSummary metrics={metrics} compact={true} />
-                  ) : isLoadingSuggestions ? (
-                    <div className="text-xs text-gray-400 animate-pulse">
-                      Loading metrics...
-                    </div>
-                  ) : (
-                    <div className="text-xs text-gray-400">
-                      Empty document
-                    </div>
-                  )}
+                  {/* Action buttons - visible on hover */}
+                  <div className="absolute top-4 right-4 flex space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => handleDownloadDocument(doc, e)}
+                      className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                      title="Download document"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={(e) => handleDeleteDocument(doc, e)}
+                      className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-sm"
+                      title="Delete document"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Main card content - clickable area */}
+                  <div
+                    onClick={() => navigate(`/editor/${doc.id}`)}
+                    className="cursor-pointer"
+                  >
+                    <h3 className="font-medium text-gray-900 mb-2 truncate pr-20">{doc.title}</h3>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Updated {new Date(doc.updated_at).toLocaleDateString()}
+                    </p>
+                    
+                    {metrics && !isLoadingSuggestions ? (
+                      <WritingSummary metrics={metrics} compact={true} />
+                    ) : isLoadingSuggestions ? (
+                      <div className="text-xs text-gray-400 animate-pulse">
+                        Loading metrics...
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-400">
+                        Empty document
+                      </div>
+                    )}
+                  </div>
                 </div>
               )
             })}

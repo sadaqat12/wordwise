@@ -1,4 +1,4 @@
-import React from 'react'
+// React import removed as it's not needed in this component
 import type { WritingMetrics } from '../../utils/writingAnalytics'
 import { formatTime } from '../../utils/writingAnalytics'
 

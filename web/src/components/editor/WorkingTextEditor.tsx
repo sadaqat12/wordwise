@@ -315,7 +315,7 @@ export default function WorkingTextEditor({
         refreshDatabaseSuggestions()
       }, 1000)
     }
-  }, [isAnalyzing, documentId])
+  }, [isAnalyzing, documentId, suggestions.length, refreshDatabaseSuggestions])
 
   // Initialize content and trigger analysis
   useEffect(() => {
@@ -357,7 +357,7 @@ export default function WorkingTextEditor({
     } else {
       console.log('⏭️ Skipping initialization - same content as before (suggestion update)')
     }
-  }, [initialContent, documentId]) // Keep both dependencies but use ref to prevent unnecessary clearing
+  }, [initialContent, documentId, setSuggestions]) // Keep both dependencies but use ref to prevent unnecessary clearing
 
   // Helper function to trigger AI analysis
   const triggerAnalysis = async (textToAnalyze: string) => {
@@ -425,12 +425,14 @@ export default function WorkingTextEditor({
 
   // Cleanup
   useEffect(() => {
+    const currentDebounceRef = debounceRef.current
+    const currentAnalysisRef = analysisRef.current
     return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current)
+      if (currentDebounceRef) {
+        clearTimeout(currentDebounceRef)
       }
-      if (analysisRef.current) {
-        clearTimeout(analysisRef.current)
+      if (currentAnalysisRef) {
+        clearTimeout(currentAnalysisRef)
       }
     }
   }, [])

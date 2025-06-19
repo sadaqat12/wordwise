@@ -44,9 +44,9 @@ const Login = () => {
           navigate('/dashboard')
         }, 100)
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Sign in error:', error)
-      setError(error.message || 'Failed to sign in')
+      setError(error instanceof Error ? error.message : 'Failed to sign in')
     } finally {
       setIsLoading(false)
     }
@@ -101,9 +101,9 @@ const Login = () => {
         console.log('Sign up successful:', data.user.email)
         navigate('/dashboard')
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Sign up error:', error)
-      setError(error.message || 'Failed to create account')
+      setError(error instanceof Error ? error.message : 'Failed to create account')
     } finally {
       setIsLoading(false)
     }

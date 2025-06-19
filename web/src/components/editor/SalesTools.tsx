@@ -7,7 +7,7 @@ interface SalesToolsProps {
   className?: string
 }
 
-interface ProspectData {
+interface ProspectData extends Record<string, unknown> {
   name: string
   company: string
   title: string

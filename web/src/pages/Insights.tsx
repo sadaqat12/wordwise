@@ -6,7 +6,7 @@ import PerformancePanel from '../components/analytics/PerformancePanel'
 import { calculateWritingMetrics } from '../utils/writingAnalytics'
 import type { WritingMetrics } from '../utils/writingAnalytics'
 import type { Suggestion } from '../store'
-import { cleanupSuggestionDatabase, type CleanupStats } from '../utils/suggestionCleanup'
+import { cleanupSuggestionDatabase } from '../utils/suggestionCleanup'
 
 const Insights = () => {
   const isAuthenticated = useRequireAuth()
@@ -17,7 +17,6 @@ const Insights = () => {
   const [allSuggestions, setAllSuggestions] = useState<Suggestion[]>([])
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(true)
   const [isCleaningUp, setIsCleaningUp] = useState(false)
-  const [cleanupStats, setCleanupStats] = useState<CleanupStats | null>(null)
 
   // Get the selected document or most recent document
   const selectedDocument = selectedDocumentId 
@@ -85,7 +84,6 @@ const Insights = () => {
     setIsCleaningUp(true)
     try {
       const stats = await cleanupSuggestionDatabase()
-      setCleanupStats(stats)
       // Reload suggestions after cleanup
       const documentIds = documents.map(doc => doc.id)
       const { data: suggestionsData } = await supabase

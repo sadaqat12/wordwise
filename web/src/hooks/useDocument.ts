@@ -42,9 +42,9 @@ export function useDocument(docId: string) {
           setContent(data.content)
           setIsLoading(false)
         }
-      } catch (err: any) {
+      } catch (err) {
         if (mounted) {
-          setError(err.message || 'Failed to load document')
+          setError(err instanceof Error ? err.message : 'Failed to load document')
           setIsLoading(false)
         }
       }

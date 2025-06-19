@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import type { WritingMetrics } from '../../utils/writingAnalytics'
 import { getRatingColor, getRatingText, formatTime } from '../../utils/writingAnalytics'
 import { getScoreBreakdown } from '../../utils/scoringDebug'

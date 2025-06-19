@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { 
   $getRoot, 
   $getSelection, 
@@ -49,251 +49,10 @@ interface RichTextEditorProps {
   content?: string
 }
 
-interface HighlightSpan {
-  start: number
-  end: number
-  suggestion: Suggestion
-}
+// Note: HighlightSpan interface removed as it's not used in the current implementation
 
-// Suggestion highlighting plugin
-function SuggestionHighlightPlugin({ 
-  suggestions = [], 
-  onSuggestionClick 
-}: { 
-  suggestions: Suggestion[]
-  onSuggestionClick?: (suggestion: Suggestion) => void 
-}) {
-  const [editor] = useLexicalComposerContext()
-
-  // Calculate highlight positions based on suggestions
-  const calculateHighlights = useCallback((text: string, suggestions: Suggestion[]): HighlightSpan[] => {
-    const spans: HighlightSpan[] = []
-    
-    suggestions
-      .filter(s => s.status === 'pending')
-      .forEach(suggestion => {
-        const originalText = suggestion.original.trim()
-        
-        // Skip very short suggestions that might be ambiguous
-        if (originalText.length <= 1) {
-          console.warn('Skipping very short suggestion:', originalText)
-          return
-        }
-        
-        // Try exact match first
-        let index = text.indexOf(originalText)
-        
-        // If exact match fails, try some variations
-        if (index === -1) {
-          // Try with the original untrimmed version
-          index = text.indexOf(suggestion.original)
-        }
-        
-        // If still not found, try case-insensitive search for spelling errors
-        if (index === -1 && (suggestion.type === 'spelling' || suggestion.type === 'grammar')) {
-          const lowerText = text.toLowerCase()
-          const lowerOriginal = originalText.toLowerCase()
-          const lowerIndex = lowerText.indexOf(lowerOriginal)
-          
-          if (lowerIndex !== -1) {
-            // Verify this is a word boundary match for short words
-            const before = lowerIndex > 0 ? lowerText[lowerIndex - 1] : ' '
-            const after = lowerIndex + lowerOriginal.length < lowerText.length ? 
-              lowerText[lowerIndex + lowerOriginal.length] : ' '
-            
-            const isWordBoundary = /\s/.test(before) && (/\s|[.,!?;]/.test(after))
-            
-            if (isWordBoundary || originalText.length > 3) {
-              index = lowerIndex
-              console.log(`Found case-insensitive match for "${originalText}" at position ${index}`)
-            }
-          }
-        }
-        
-        // If we found a match
-        if (index !== -1) {
-          // Use the actual text from the document (preserves case)
-          const actualText = text.substring(index, index + originalText.length)
-          
-          spans.push({
-            start: index,
-            end: index + originalText.length,
-            suggestion: { ...suggestion, original: actualText }
-          })
-          
-          console.log(`✅ Highlighted "${actualText}" for suggestion: ${suggestion.suggestion}`)
-        } else {
-          console.warn(`❌ Could not find suggestion text in content:`, {
-            looking_for: originalText,
-            suggestion_type: suggestion.type,
-            contentPreview: text.substring(0, 100) + '...'
-          })
-        }
-      })
-    
-    // Sort by start position and remove overlaps
-    spans.sort((a, b) => a.start - b.start)
-    
-    // Remove overlapping spans (keep the first one)
-    const filteredSpans: HighlightSpan[] = []
-    spans.forEach(span => {
-      const hasOverlap = filteredSpans.some(existing => 
-        (span.start >= existing.start && span.start < existing.end) ||
-        (span.end > existing.start && span.end <= existing.end)
-      )
-      if (!hasOverlap) {
-        filteredSpans.push(span)
-      } else {
-        console.log(`Skipping overlapping span: "${span.suggestion.original}"`)
-      }
-    })
-    
-    console.log(`📍 Successfully created ${filteredSpans.length} highlight spans from ${suggestions.length} suggestions`)
-    return filteredSpans
-  }, [])
-
-  // Apply highlights to DOM
-  const applyHighlightsToDOM = useCallback((element: HTMLElement, text: string, spans: HighlightSpan[]) => {
-    if (spans.length === 0) return
-
-    const walker = document.createTreeWalker(
-      element,
-      NodeFilter.SHOW_TEXT,
-      null
-    )
-
-    const textNodes: Text[] = []
-    let node
-    while ((node = walker.nextNode())) {
-      textNodes.push(node as Text)
-    }
-
-    // Apply highlights to text nodes
-    let currentOffset = 0
-    textNodes.forEach(textNode => {
-      const nodeText = textNode.textContent || ''
-      const nodeStart = currentOffset
-      const nodeEnd = currentOffset + nodeText.length
-
-      // Find spans that intersect with this text node
-      const intersectingSpans = spans.filter(span => 
-        span.start < nodeEnd && span.end > nodeStart
-      )
-
-      if (intersectingSpans.length > 0) {
-        let html = ''
-        let lastEnd = 0
-
-        intersectingSpans.forEach(span => {
-          const relativeStart = Math.max(0, span.start - nodeStart)
-          const relativeEnd = Math.min(nodeText.length, span.end - nodeStart)
-
-          if (relativeStart >= lastEnd) {
-            // Add text before highlight
-            html += escapeHtml(nodeText.substring(lastEnd, relativeStart))
-            
-            // Add highlighted text
-            const highlightClass = `suggestion-highlight suggestion-${span.suggestion.type}`
-            const highlightText = escapeHtml(nodeText.substring(relativeStart, relativeEnd))
-            html += `<span class="${highlightClass}" data-suggestion-id="${span.suggestion.id}" style="cursor: pointer;">${highlightText}</span>`
-            
-            lastEnd = relativeEnd
-          }
-        })
-
-        // Add remaining text
-        html += escapeHtml(nodeText.substring(lastEnd))
-
-        // Replace the text node with highlighted HTML
-        const tempDiv = document.createElement('div')
-        tempDiv.innerHTML = html
-        const parent = textNode.parentNode
-        if (parent) {
-          while (tempDiv.firstChild) {
-            parent.insertBefore(tempDiv.firstChild, textNode)
-          }
-          parent.removeChild(textNode)
-        }
-      }
-
-      currentOffset += nodeText.length
-    })
-  }, [])
-
-  // Apply highlights to the editor
-  const applyHighlights = useCallback(() => {
-    editor.update(() => {
-      const root = $getRoot()
-      const textContent = root.getTextContent()
-      
-      // Calculate new highlights
-      const newHighlightSpans = calculateHighlights(textContent, suggestions)
-      
-      // Get the editor DOM element
-      const editorElement = editor.getRootElement()
-      if (!editorElement) return
-      
-      // Remove existing highlights
-      const existingHighlights = editorElement.querySelectorAll('.suggestion-highlight')
-      existingHighlights.forEach(highlight => {
-        const parent = highlight.parentNode
-        if (parent) {
-          parent.replaceChild(document.createTextNode(highlight.textContent || ''), highlight)
-        }
-      })
-      
-      // Add new highlights
-      if (newHighlightSpans.length > 0) {
-        setTimeout(() => {
-          const updatedEditorElement = editor.getRootElement()
-          if (!updatedEditorElement) return
-          
-          applyHighlightsToDOM(updatedEditorElement, textContent, newHighlightSpans)
-        }, 0)
-      }
-    })
-  }, [editor, suggestions, calculateHighlights, applyHighlightsToDOM])
-
-
-
-  // Escape HTML characters
-  const escapeHtml = (text: string): string => {
-    const div = document.createElement('div')
-    div.textContent = text
-    return div.innerHTML
-  }
-
-  // Handle clicks on suggestions
-  useEffect(() => {
-    const editorElement = editor.getRootElement()
-    if (!editorElement) return
-
-    const handleClick = (event: MouseEvent) => {
-      const target = event.target as HTMLElement
-      const suggestionElement = target.closest('[data-suggestion-id]') as HTMLElement
-      
-      if (suggestionElement && onSuggestionClick) {
-        const suggestionId = suggestionElement.getAttribute('data-suggestion-id')
-        const suggestion = suggestions.find(s => s.id === suggestionId)
-        if (suggestion) {
-          onSuggestionClick(suggestion)
-        }
-      }
-    }
-
-    editorElement.addEventListener('click', handleClick)
-    return () => {
-      editorElement.removeEventListener('click', handleClick)
-    }
-  }, [editor, suggestions, onSuggestionClick])
-
-  // Apply highlights when suggestions change
-  useEffect(() => {
-    applyHighlights()
-  }, [suggestions, applyHighlights])
-
-  return null
-}
+// Note: This component was replaced by SmartSuggestionHighlightPlugin
+// Keeping this comment for reference, but the implementation has been removed
 
 // Toolbar component
 function Toolbar() {
@@ -686,70 +445,16 @@ function SmartSuggestionHighlightPlugin({
 }) {
   const [editor] = useLexicalComposerContext()
   const [isTyping, setIsTyping] = useState(false)
-  const typingTimeoutRef = useRef<NodeJS.Timeout>()
-  const highlightContainerRef = useRef<HTMLDivElement>()
-  const lastContentRef = useRef<string>('')
+  const typingTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined)
+  const highlightContainerRef = useRef<HTMLDivElement | undefined>(undefined)
 
-  // Track typing state - ONLY on keyboard input events
-  useEffect(() => {
-    const editorElement = editor.getRootElement()
-    if (!editorElement) return
-
-    const handleKeydown = () => {
-      console.log('⌨️ KEYBOARD detected - user typing')
-      setIsTyping(true)
-      
-      // Clear previous timeout
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current)
-      }
-      
-      // Show highlights again after user stops typing
-      typingTimeoutRef.current = setTimeout(() => {
-        console.log('⏰ Typing timeout complete - showing highlights')
-        setIsTyping(false)
-      }, 1000) // 1 second after stopping typing
-    }
-
-    // Listen for actual keyboard events (not content changes)
-    editorElement.addEventListener('keydown', handleKeydown)
-    
-    return () => {
-      editorElement.removeEventListener('keydown', handleKeydown)
-    }
-  }, [editor])
-
-  // Calculate and apply highlights when not typing
-  useEffect(() => {
-    console.log('🎨 Highlight effect triggered:', { 
-      isTyping, 
-      suggestionsCount: suggestions.length,
-      pendingSuggestions: suggestions.filter(s => s.status === 'pending').length 
-    })
-    
-    if (isTyping) {
-      // Clear highlights while typing
-      console.log('⌨️ Typing detected - clearing highlights')
-      clearHighlights()
-      return
-    }
-
-    // Apply highlights when not typing
-    const timeoutId = setTimeout(() => {
-      console.log('✨ Applying highlights after typing stopped')
-      applyHighlights()
-    }, 100) // Small delay to ensure DOM is stable
-
-    return () => clearTimeout(timeoutId)
-  }, [suggestions, isTyping])
-
-  const clearHighlights = () => {
+  const clearHighlights = useCallback(() => {
     if (highlightContainerRef.current && document.contains(highlightContainerRef.current)) {
       highlightContainerRef.current.innerHTML = ''
     }
-  }
+  }, [])
 
-  const applyHighlights = () => {
+  const applyHighlights = useCallback(() => {
     console.log('🔧 applyHighlights called')
     const editorElement = editor.getRootElement()
     if (!editorElement) {
@@ -838,7 +543,47 @@ function SmartSuggestionHighlightPlugin({
         console.log('❌ Text not found in content:', `"${originalText}"`)
       }
     })
-  }
+  }, [editor, suggestions])
+  
+  // Track typing state and apply highlights
+  useEffect(() => {
+    const editorElement = editor.getRootElement()
+    if (!editorElement) return
+
+    const handleKeydown = () => {
+      setIsTyping(true)
+      
+      // Clear previous timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+      }
+      
+      // Show highlights again after user stops typing
+      typingTimeoutRef.current = setTimeout(() => {
+        setIsTyping(false)
+      }, 1000)
+    }
+
+    editorElement.addEventListener('keydown', handleKeydown)
+    
+    return () => {
+      editorElement.removeEventListener('keydown', handleKeydown)
+    }
+  }, [editor])
+
+  // Apply highlights when suggestions change and not typing
+  useEffect(() => {
+    if (isTyping) {
+      clearHighlights()
+      return
+    }
+
+    const timeoutId = setTimeout(() => {
+      applyHighlights()
+    }, 100)
+
+    return () => clearTimeout(timeoutId)
+  }, [suggestions, isTyping, clearHighlights, applyHighlights])
 
   const createHighlightElement = (
     editorElement: HTMLElement, 
