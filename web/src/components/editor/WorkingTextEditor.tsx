@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '../../store'
 import SalesTools from './SalesTools'
-import HighlightedTextEditor from './HighlightedTextEditor'
+import RichTextEditor from './RichTextEditor'
 
 interface WorkingTextEditorProps {
   initialContent?: string
@@ -392,8 +392,9 @@ export default function WorkingTextEditor({
       <div className="flex h-full">
         {/* Editor */}
         <div className="flex-1 relative">
-          <HighlightedTextEditor
+          <RichTextEditor
             initialContent={content}
+            content={content}
             onContentChange={handleContentChange}
             suggestions={suggestions}
             onSuggestionClick={(suggestion) => handleAcceptSuggestion(suggestion.id)}
