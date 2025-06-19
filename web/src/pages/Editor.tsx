@@ -163,10 +163,17 @@ const Editor = () => {
               </div>
               
               <button 
+                onClick={() => navigate('/insights')}
+                className="text-sm text-indigo-600 hover:text-indigo-900 transition-colors"
+              >
+                Analytics
+              </button>
+              
+              <button 
                 onClick={handleBackToDashboard}
                 className="text-sm text-indigo-600 hover:text-indigo-900 transition-colors"
               >
-                Back to Dashboard
+                Dashboard
               </button>
             </div>
           </div>

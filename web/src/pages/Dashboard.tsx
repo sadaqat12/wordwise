@@ -4,6 +4,9 @@ import { useRequireAuth } from '../hooks/useAuth'
 import { useAppStore, supabase } from '../store'
 import WorkspaceSelector from '../components/workspace/WorkspaceSelector'
 import CreateWorkspaceModal from '../components/workspace/CreateWorkspaceModal'
+import WritingSummary from '../components/analytics/WritingSummary'
+import { calculateWritingMetrics } from '../utils/writingAnalytics'
+import type { Suggestion } from '../store'
 
 const Dashboard = () => {
   const isAuthenticated = useRequireAuth()
@@ -24,6 +27,8 @@ const Dashboard = () => {
 
   const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [allSuggestions, setAllSuggestions] = useState<Suggestion[]>([])
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(true)
 
   useEffect(() => {
     if (!isAuthenticated || !user) return
@@ -75,6 +80,40 @@ const Dashboard = () => {
 
     loadDocuments()
   }, [currentWorkspace, setDocuments])
+
+  // Fetch all suggestions for documents in the workspace
+  useEffect(() => {
+    const fetchAllSuggestions = async () => {
+      if (documents.length === 0) {
+        setAllSuggestions([])
+        setIsLoadingSuggestions(false)
+        return
+      }
+
+      try {
+        const documentIds = documents.map(doc => doc.id)
+        const { data: suggestionsData, error } = await supabase
+          .from('suggestions')
+          .select('*')
+          .in('doc_id', documentIds)
+          .order('created_at', { ascending: false })
+
+        if (error) {
+          console.error('Error fetching suggestions:', error)
+          setAllSuggestions([])
+        } else {
+          setAllSuggestions(suggestionsData || [])
+        }
+      } catch (error) {
+        console.error('Error fetching suggestions:', error)
+        setAllSuggestions([])
+      } finally {
+        setIsLoadingSuggestions(false)
+      }
+    }
+
+    fetchAllSuggestions()
+  }, [documents])
 
   const handleCreateDocument = async () => {
     if (!currentWorkspace) return
@@ -186,6 +225,15 @@ const Dashboard = () => {
             <div className="flex items-center space-x-4">
               <span className="text-sm text-gray-600">Welcome, {user?.name}</span>
               <button
+                onClick={() => navigate('/insights')}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                Analytics
+              </button>
+              <button
                 onClick={handleSignOut}
                 className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
               >
@@ -249,21 +297,40 @@ const Dashboard = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {documents.map((doc) => (
-              <div
-                key={doc.id}
-                onClick={() => navigate(`/editor/${doc.id}`)}
-                className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer"
-              >
-                <h3 className="font-medium text-gray-900 mb-2 truncate">{doc.title}</h3>
-                <p className="text-sm text-gray-500 mb-4">
-                  Updated {new Date(doc.updated_at).toLocaleDateString()}
-                </p>
-                <div className="text-xs text-gray-400">
-                  {doc.content ? `${doc.content.split(' ').length} words` : 'Empty document'}
+            {documents.map((doc) => {
+              const hasContent = doc.content && doc.content.trim().length > 0
+              
+              // Get the actual suggestions count for this document to calculate accurate score
+              const documentSuggestions = allSuggestions.filter(s => 
+                s.doc_id === doc.id && s.status === 'pending'
+              )
+              const metrics = hasContent ? calculateWritingMetrics(doc.content, documentSuggestions.length) : null
+              
+              return (
+                <div
+                  key={doc.id}
+                  onClick={() => navigate(`/editor/${doc.id}`)}
+                  className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer"
+                >
+                  <h3 className="font-medium text-gray-900 mb-2 truncate">{doc.title}</h3>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Updated {new Date(doc.updated_at).toLocaleDateString()}
+                  </p>
+                  
+                  {metrics && !isLoadingSuggestions ? (
+                    <WritingSummary metrics={metrics} compact={true} />
+                  ) : isLoadingSuggestions ? (
+                    <div className="text-xs text-gray-400 animate-pulse">
+                      Loading metrics...
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-400">
+                      Empty document
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </main>

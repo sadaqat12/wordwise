@@ -77,7 +77,7 @@ interface AppStore {
   setIsAnalyzing: (isAnalyzing: boolean) => void
   setSuggestions: (suggestions: Suggestion[]) => void
   addSuggestion: (suggestion: Suggestion) => void
-  updateSuggestion: (id: string, updates: Partial<Suggestion>) => void
+  updateSuggestion: (id: string, updates: Partial<Suggestion>) => Promise<void>
   removeSuggestion: (id: string) => void
   
   // Auth actions (password-based)
@@ -127,11 +127,34 @@ export const useAppStore = create<AppStore>((set, get) => ({
     suggestions: [...state.suggestions, suggestion]
   })),
   
-  updateSuggestion: (id, updates) => set((state) => ({
-    suggestions: state.suggestions.map(s => 
-      s.id === id ? { ...s, ...updates } : s
-    )
-  })),
+  updateSuggestion: async (id, updates) => {
+    // Update local state first for immediate UI feedback
+    set((state) => ({
+      suggestions: state.suggestions.map(s => 
+        s.id === id ? { ...s, ...updates } : s
+      )
+    }))
+    
+    // Also update the database
+    try {
+      const { error } = await supabase
+        .from('suggestions')
+        .update(updates)
+        .eq('id', id)
+      
+      if (error) {
+        console.error('Error updating suggestion in database:', error)
+        // Revert local state if database update fails
+        set((state) => ({
+          suggestions: state.suggestions.map(s => 
+            s.id === id ? { ...s, ...Object.fromEntries(Object.keys(updates).map(key => [key, s[key as keyof Suggestion]])) } : s
+          )
+        }))
+      }
+    } catch (error) {
+      console.error('Error updating suggestion:', error)
+    }
+  },
   
   removeSuggestion: (id) => set((state) => ({
     suggestions: state.suggestions.filter(s => s.id !== id)
@@ -313,13 +336,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
       
       const suggestions = rawSuggestions.map((s: any) => ({
-        id: crypto.randomUUID(), // Generate a unique ID
-        doc_id: documentId || '',
+        id: s.id || crypto.randomUUID(), // Use database ID if available, fallback to generated ID
+        doc_id: s.doc_id || documentId || '',
         type: s.type,
         original: s.original,
         suggestion: s.suggestion,
         persona_tag: s.persona_tag || persona,
-        status: 'pending', // Set default status
+        status: s.status || 'pending', // Use database status if available
         confidence: s.confidence,
         position_start: s.position_start,
         position_end: s.position_end

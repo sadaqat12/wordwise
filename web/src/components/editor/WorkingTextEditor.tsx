@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { useAppStore } from '../../store'
+import { useAppStore, supabase } from '../../store'
 import SalesTools from './SalesTools'
 import RichTextEditor from './RichTextEditor'
+import PerformancePanel from '../analytics/PerformancePanel'
+import { calculateWritingMetrics } from '../../utils/writingAnalytics'
+import type { Suggestion } from '../../store'
 
 interface WorkingTextEditorProps {
   initialContent?: string
@@ -21,6 +24,8 @@ export default function WorkingTextEditor({
   const [selectedText, setSelectedText] = useState('')
   const [isApplyingSuggestion, setIsApplyingSuggestion] = useState(false)
   const [lastAnalyzedContent, setLastAnalyzedContent] = useState('')
+  const [showPerformance, setShowPerformance] = useState(false)
+  const [databaseSuggestions, setDatabaseSuggestions] = useState<Suggestion[]>([])
   const debounceRef = useRef<NodeJS.Timeout | undefined>(undefined)
   const analysisRef = useRef<NodeJS.Timeout | undefined>(undefined)
   const initializedContentRef = useRef<string>('')
@@ -198,6 +203,26 @@ export default function WorkingTextEditor({
     applyContentChange(newContent, originalText, replacementText, suggestionId)
   }
   
+  const refreshDatabaseSuggestions = async () => {
+    if (!documentId) return
+
+    try {
+      const { data: dbSuggestions, error } = await supabase
+        .from('suggestions')
+        .select('*')
+        .eq('doc_id', documentId)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error refreshing database suggestions:', error)
+      } else {
+        setDatabaseSuggestions(dbSuggestions || [])
+      }
+    } catch (error) {
+      console.error('Error refreshing database suggestions:', error)
+    }
+  }
+
   const applyContentChange = (newContent: string, originalText: string, replacementText: string, acceptedSuggestionId: string) => {
     console.log('🔧 Applying suggestion text change:', {
       original: originalText,
@@ -222,7 +247,10 @@ export default function WorkingTextEditor({
     }
     
     // Mark the accepted suggestion as accepted (this keeps it in the list but changes status)
-    updateSuggestion(acceptedSuggestionId, { status: 'accepted' })
+    updateSuggestion(acceptedSuggestionId, { status: 'accepted' }).then(() => {
+      // Refresh database suggestions to update performance score
+      refreshDatabaseSuggestions()
+    })
     
     console.log('✅ Applied suggestion - other suggestions preserved')
     
@@ -243,8 +271,51 @@ export default function WorkingTextEditor({
 
   const handleRejectSuggestion = (suggestionId: string) => {
     console.log('Rejecting suggestion:', suggestionId)
-    updateSuggestion(suggestionId, { status: 'rejected' })
+    updateSuggestion(suggestionId, { status: 'rejected' }).then(() => {
+      // Refresh database suggestions to update performance score
+      refreshDatabaseSuggestions()
+    })
   }
+
+  // Fetch database suggestions for this document to ensure consistency with analytics
+  useEffect(() => {
+    const fetchDatabaseSuggestions = async () => {
+      if (!documentId) {
+        setDatabaseSuggestions([])
+        return
+      }
+
+      try {
+        const { data: dbSuggestions, error } = await supabase
+          .from('suggestions')
+          .select('*')
+          .eq('doc_id', documentId)
+          .order('created_at', { ascending: false })
+
+        if (error) {
+          console.error('Error fetching database suggestions:', error)
+          setDatabaseSuggestions([])
+        } else {
+          setDatabaseSuggestions(dbSuggestions || [])
+        }
+      } catch (error) {
+        console.error('Error fetching database suggestions:', error)
+        setDatabaseSuggestions([])
+      }
+    }
+
+    fetchDatabaseSuggestions()
+  }, [documentId])
+
+  // Refresh database suggestions when new analysis completes
+  useEffect(() => {
+    if (documentId && !isAnalyzing && suggestions.length > 0) {
+      // Analysis just completed, refresh database suggestions after a short delay
+      setTimeout(() => {
+        refreshDatabaseSuggestions()
+      }, 1000)
+    }
+  }, [isAnalyzing, documentId])
 
   // Initialize content and trigger analysis
   useEffect(() => {
@@ -412,6 +483,31 @@ export default function WorkingTextEditor({
               </span>
             )}
             <span>{content.split(/\s+/).filter(word => word.length > 0).length} words</span>
+            
+            {/* Quick performance score */}
+            {content.trim().length > 0 && (
+              <span 
+                className={`ml-2 px-2 py-1 text-xs rounded ${
+                  calculateWritingMetrics(content, databaseSuggestions.filter(s => s.status === 'pending').length).textScore >= 80
+                    ? 'bg-green-100 text-green-700'
+                    : calculateWritingMetrics(content, databaseSuggestions.filter(s => s.status === 'pending').length).textScore >= 60
+                    ? 'bg-yellow-100 text-yellow-700'
+                    : 'bg-red-100 text-red-700'
+                }`}
+                title="Writing quality score"
+              >
+                {calculateWritingMetrics(content, databaseSuggestions.filter(s => s.status === 'pending').length).textScore}/100
+              </span>
+            )}
+            
+            {/* Performance button */}
+            <button
+              onClick={() => setShowPerformance(true)}
+              className="ml-2 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+              title="View detailed writing performance"
+            >
+              📊 Performance
+            </button>
           </div>
         </div>
 
@@ -536,6 +632,20 @@ export default function WorkingTextEditor({
 
         </div>
       </div>
+
+      {/* Performance Modal */}
+      {showPerformance && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <PerformancePanel
+              metrics={calculateWritingMetrics(content, databaseSuggestions.filter(s => s.status === 'pending').length)}
+              text={content}
+              suggestionsCount={databaseSuggestions.filter(s => s.status === 'pending').length}
+              onClose={() => setShowPerformance(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 } 
