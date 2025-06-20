@@ -10,7 +10,7 @@ const Editor = () => {
   const navigate = useNavigate()
   const isAuthenticated = useRequireAuth()
   const { document, isLoading, error, saveDocument } = useDocument(docId || '')
-  const { persona, setPersona, updateDocument } = useAppStore()
+  const { updateDocument } = useAppStore()
   
   // Title editing state
   const [isEditingTitle, setIsEditingTitle] = useState(false)
@@ -239,19 +239,6 @@ const Editor = () => {
             </div>
             
             <div className="flex items-center space-x-4">
-              {/* Persona Toggle */}
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-700">Mode:</span>
-                <select
-                  value={persona}
-                  onChange={(e) => setPersona(e.target.value as 'general' | 'sales')}
-                  className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="general">General</option>
-                  <option value="sales">Sales</option>
-                </select>
-              </div>
-              
               {/* Auto-save indicator */}
               {savingState !== 'idle' && (
                 <div className={`text-sm flex items-center ${getSavingStatus().className}`}>

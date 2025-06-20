@@ -5,8 +5,7 @@ import { useAppStore, supabase } from '../store'
 import WorkspaceSelector from '../components/workspace/WorkspaceSelector'
 import CreateWorkspaceModal from '../components/workspace/CreateWorkspaceModal'
 import WritingSummary from '../components/analytics/WritingSummary'
-import { calculateWritingMetrics } from '../utils/writingAnalytics'
-import type { Suggestion } from '../store'
+import type { Suggestion, Document } from '../store'
 
 const Dashboard = () => {
   const isAuthenticated = useRequireAuth()
@@ -21,7 +20,9 @@ const Dashboard = () => {
     setCurrentWorkspace,
     createDocument,
     deleteDocument,
-    signOut
+    signOut,
+    markDocumentSent,
+    updateDocumentOutcome
   } = useAppStore()
 
   console.log('Dashboard render - isAuthenticated:', isAuthenticated, 'user:', user?.email)
@@ -167,6 +168,64 @@ const Dashboard = () => {
     } catch (error) {
       console.error('Error deleting document:', error)
       alert('Failed to delete document. Please try again.')
+    }
+  }
+
+  const handleMarkAsSent = async (doc: Document, event: React.MouseEvent) => {
+    event.stopPropagation()
+    
+    try {
+      const success = await markDocumentSent(doc.id)
+      if (!success) {
+        alert('Failed to mark document as sent. Please try again.')
+      }
+    } catch (error) {
+      console.error('Error marking document as sent:', error)
+      alert('Failed to mark document as sent. Please try again.')
+    }
+  }
+
+  const handleUpdateOutcome = async (doc: Document, status: Document['outcome_status'], event: React.MouseEvent) => {
+    event.stopPropagation()
+    
+    try {
+      const success = await updateDocumentOutcome(doc.id, status)
+      if (!success) {
+        alert('Failed to update outcome. Please try again.')
+      }
+    } catch (error) {
+      console.error('Error updating outcome:', error)
+      alert('Failed to update outcome. Please try again.')
+    }
+  }
+
+  const getOutcomeColor = (status?: Document['outcome_status'], sentAt?: string) => {
+    // Handle legacy documents that have sent_at but no outcome_status
+    if (!status && sentAt) {
+      return 'bg-blue-100 text-blue-800'
+    }
+    
+    switch (status) {
+      case 'sent': return 'bg-blue-100 text-blue-800'
+      case 'opened': return 'bg-yellow-100 text-yellow-800'
+      case 'replied': return 'bg-green-100 text-green-800'
+      case 'meeting_booked': return 'bg-purple-100 text-purple-800'
+      default: return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  const getOutcomeLabel = (status?: Document['outcome_status'], sentAt?: string) => {
+    // Handle legacy documents that have sent_at but no outcome_status
+    if (!status && sentAt) {
+      return 'Sent'
+    }
+    
+    switch (status) {
+      case 'sent': return 'Sent'
+      case 'opened': return 'Opened'
+      case 'replied': return 'Replied'
+      case 'meeting_booked': return 'Meeting Booked'
+      default: return 'Draft'
     }
   }
 
@@ -342,13 +401,16 @@ const Dashboard = () => {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {documents.map((doc) => {
-              const hasContent = doc.content && doc.content.trim().length > 0
-              
-              // Get the actual suggestions count for this document to calculate accurate score
-              const documentSuggestions = allSuggestions.filter(s => 
-                s.doc_id === doc.id && s.status === 'pending'
-              )
-              const metrics = hasContent ? calculateWritingMetrics(doc.content, documentSuggestions.length) : null
+                              const hasContent = doc.content && doc.content.trim().length > 0
+                
+                // Get the actual suggestions count for this document to calculate accurate score
+                const documentSuggestions = allSuggestions.filter(s => 
+                  s.doc_id === doc.id && s.status === 'pending'
+                )
+                // Simple fallback metrics for dashboard display
+                const fallbackScore = hasContent ? (documentSuggestions.length === 0 ? 100 : Math.max(5, 70 - (documentSuggestions.length * 5))) : 0
+                const wordCount = hasContent ? doc.content.split(/\s+/).filter((w: string) => w.length > 0).length : 0
+                const metrics = hasContent ? { textScore: fallbackScore, words: wordCount } : null
               
               return (
                 <div
@@ -382,10 +444,23 @@ const Dashboard = () => {
                     onClick={() => navigate(`/editor/${doc.id}`)}
                     className="cursor-pointer"
                   >
-                    <h3 className="font-medium text-gray-900 mb-2 truncate pr-20">{doc.title}</h3>
-                    <p className="text-sm text-gray-500 mb-4">
-                      Updated {new Date(doc.updated_at).toLocaleDateString()}
-                    </p>
+                    <div className="flex items-start justify-between mb-3">
+                      <h3 className="font-medium text-gray-900 truncate pr-4">{doc.title}</h3>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getOutcomeColor(doc.outcome_status, doc.sent_at)}`}>
+                        {getOutcomeLabel(doc.outcome_status, doc.sent_at)}
+                      </span>
+                    </div>
+                    
+                    <div className="space-y-1 mb-4">
+                      <p className="text-sm text-gray-500">
+                        Updated {new Date(doc.updated_at).toLocaleDateString()}
+                      </p>
+                      {doc.sent_at && (
+                        <p className="text-sm text-gray-500">
+                          Sent {new Date(doc.sent_at).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
                     
                     {metrics && !isLoadingSuggestions ? (
                       <WritingSummary metrics={metrics} compact={true} />
@@ -396,6 +471,45 @@ const Dashboard = () => {
                     ) : (
                       <div className="text-xs text-gray-400">
                         Empty document
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Outcome tracking buttons */}
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    {!doc.sent_at ? (
+                      <button
+                        onClick={(e) => handleMarkAsSent(doc, e)}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors"
+                      >
+                        📤 Mark as Sent
+                      </button>
+                    ) : (
+                      <div className="flex space-x-2">
+                        {(doc.outcome_status === 'sent' || (!doc.outcome_status && doc.sent_at)) && (
+                          <button
+                            onClick={(e) => handleUpdateOutcome(doc, 'opened', e)}
+                            className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors"
+                          >
+                            👀 Opened
+                          </button>
+                        )}
+                        {(doc.outcome_status === 'sent' || doc.outcome_status === 'opened' || (!doc.outcome_status && doc.sent_at)) && (
+                          <button
+                            onClick={(e) => handleUpdateOutcome(doc, 'replied', e)}
+                            className="flex-1 bg-green-600 hover:bg-green-700 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors"
+                          >
+                            💬 Replied
+                          </button>
+                        )}
+                        {(doc.outcome_status === 'replied') && (
+                          <button
+                            onClick={(e) => handleUpdateOutcome(doc, 'meeting_booked', e)}
+                            className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors"
+                          >
+                            📅 Meeting
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

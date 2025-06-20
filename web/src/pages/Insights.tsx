@@ -59,21 +59,30 @@ const Insights = () => {
 
   // Calculate metrics when document changes
   useEffect(() => {
-    if (selectedDocument?.content) {
-      // Always use database suggestions for consistent analytics
-      // This ensures the score matches what was actually saved in the database
-      const documentSuggestions = allSuggestions.filter(s => 
-        s.doc_id === selectedDocument.id && s.status === 'pending'
-      )
-      
-      const calculatedMetrics = calculateWritingMetrics(
-        selectedDocument.content, 
-        documentSuggestions.length
-      )
-      setMetrics(calculatedMetrics)
-    } else {
-      setMetrics(null)
+    const calculateMetrics = async () => {
+      if (selectedDocument?.content) {
+        // Always use database suggestions for consistent analytics
+        // This ensures the score matches what was actually saved in the database
+        const documentSuggestions = allSuggestions.filter(s => 
+          s.doc_id === selectedDocument.id && s.status === 'pending'
+        )
+        
+        try {
+          const calculatedMetrics = await calculateWritingMetrics(
+            selectedDocument.content, 
+            documentSuggestions.length
+          )
+          setMetrics(calculatedMetrics)
+        } catch (error) {
+          console.error('Error calculating metrics:', error)
+          setMetrics(null)
+        }
+      } else {
+        setMetrics(null)
+      }
     }
+
+    calculateMetrics()
   }, [selectedDocument, allSuggestions])
 
   const handleCleanupDatabase = async () => {
@@ -112,6 +121,24 @@ const Insights = () => {
   const totalSuggestions = allSuggestions.length
   const acceptedSuggestions = allSuggestions.filter(s => s.status === 'accepted').length
   const acceptanceRate = totalSuggestions > 0 ? Math.round((acceptedSuggestions / totalSuggestions) * 100) : 0
+
+  // Calculate outcome statistics
+  const documentsWithOutcomes = documents.filter(doc => doc.sent_at)
+  const outcomeStats = {
+    sent: documentsWithOutcomes.length,
+    opened: documents.filter(doc => doc.outcome_status === 'opened' || doc.outcome_status === 'replied' || doc.outcome_status === 'meeting_booked').length,
+    replied: documents.filter(doc => doc.outcome_status === 'replied' || doc.outcome_status === 'meeting_booked').length,
+    meetings: documents.filter(doc => doc.outcome_status === 'meeting_booked').length
+  }
+
+  // Calculate average suggestions used by outcome
+  const avgSuggestionsByOutcome = {
+    draft: documents.filter(doc => !doc.sent_at).reduce((sum, doc) => sum + (doc.suggestions_used_count || 0), 0) / Math.max(documents.filter(doc => !doc.sent_at).length, 1),
+    sent: documents.filter(doc => doc.outcome_status === 'sent').reduce((sum, doc) => sum + (doc.suggestions_used_count || 0), 0) / Math.max(documents.filter(doc => doc.outcome_status === 'sent').length, 1),
+    opened: documents.filter(doc => ['opened', 'replied', 'meeting_booked'].includes(doc.outcome_status || '')).reduce((sum, doc) => sum + (doc.suggestions_used_count || 0), 0) / Math.max(documents.filter(doc => ['opened', 'replied', 'meeting_booked'].includes(doc.outcome_status || '')).length, 1),
+    replied: documents.filter(doc => ['replied', 'meeting_booked'].includes(doc.outcome_status || '')).reduce((sum, doc) => sum + (doc.suggestions_used_count || 0), 0) / Math.max(documents.filter(doc => ['replied', 'meeting_booked'].includes(doc.outcome_status || '')).length, 1),
+    meetings: documents.filter(doc => doc.outcome_status === 'meeting_booked').reduce((sum, doc) => sum + (doc.suggestions_used_count || 0), 0) / Math.max(documents.filter(doc => doc.outcome_status === 'meeting_booked').length, 1)
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -200,6 +227,102 @@ const Insights = () => {
             <p className="text-sm text-gray-500 mt-2">Current document quality</p>
           </div>
         </div>
+
+        {/* Outcome Tracking Analytics */}
+        {documentsWithOutcomes.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">📊 Outcome Tracking</h2>
+            
+            {/* Outcome Funnel */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+              <div className="bg-blue-50 rounded-lg border border-blue-200 p-6">
+                <h3 className="text-lg font-semibold text-blue-900 mb-2">📤 Sent</h3>
+                <p className="text-3xl font-bold text-blue-600">{outcomeStats.sent}</p>
+                <p className="text-sm text-blue-700 mt-2">
+                  Avg {Math.round(avgSuggestionsByOutcome.sent)} suggestions used
+                </p>
+              </div>
+
+              <div className="bg-yellow-50 rounded-lg border border-yellow-200 p-6">
+                <h3 className="text-lg font-semibold text-yellow-900 mb-2">👀 Opened</h3>
+                <p className="text-3xl font-bold text-yellow-600">{outcomeStats.opened}</p>
+                <p className="text-sm text-yellow-700 mt-2">
+                  Avg {Math.round(avgSuggestionsByOutcome.opened)} suggestions used
+                </p>
+                <p className="text-xs text-yellow-600 mt-1">
+                  {outcomeStats.sent > 0 ? Math.round((outcomeStats.opened / outcomeStats.sent) * 100) : 0}% open rate
+                </p>
+              </div>
+
+              <div className="bg-green-50 rounded-lg border border-green-200 p-6">
+                <h3 className="text-lg font-semibold text-green-900 mb-2">💬 Replied</h3>
+                <p className="text-3xl font-bold text-green-600">{outcomeStats.replied}</p>
+                <p className="text-sm text-green-700 mt-2">
+                  Avg {Math.round(avgSuggestionsByOutcome.replied)} suggestions used
+                </p>
+                <p className="text-xs text-green-600 mt-1">
+                  {outcomeStats.sent > 0 ? Math.round((outcomeStats.replied / outcomeStats.sent) * 100) : 0}% reply rate
+                </p>
+              </div>
+
+              <div className="bg-purple-50 rounded-lg border border-purple-200 p-6">
+                <h3 className="text-lg font-semibold text-purple-900 mb-2">📅 Meetings</h3>
+                <p className="text-3xl font-bold text-purple-600">{outcomeStats.meetings}</p>
+                <p className="text-sm text-purple-700 mt-2">
+                  Avg {Math.round(avgSuggestionsByOutcome.meetings)} suggestions used
+                </p>
+                <p className="text-xs text-purple-600 mt-1">
+                  {outcomeStats.sent > 0 ? Math.round((outcomeStats.meetings / outcomeStats.sent) * 100) : 0}% conversion rate
+                </p>
+              </div>
+            </div>
+
+            {/* AI Impact Insights */}
+            <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">🤖 AI Impact Analysis</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="font-medium text-gray-800 mb-2">Suggestions vs Outcomes</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Documents with meetings:</span>
+                      <span className="font-medium">{Math.round(avgSuggestionsByOutcome.meetings)} avg suggestions</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Documents with replies:</span>
+                      <span className="font-medium">{Math.round(avgSuggestionsByOutcome.replied)} avg suggestions</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Documents opened only:</span>
+                      <span className="font-medium">{Math.round(avgSuggestionsByOutcome.opened)} avg suggestions</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Draft documents:</span>
+                      <span className="font-medium">{Math.round(avgSuggestionsByOutcome.draft)} avg suggestions</span>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="font-medium text-gray-800 mb-2">Key Insights</h4>
+                  <div className="space-y-1 text-sm text-gray-600">
+                    {avgSuggestionsByOutcome.meetings > avgSuggestionsByOutcome.draft && (
+                      <p>✅ Documents that book meetings use more AI suggestions</p>
+                    )}
+                    {avgSuggestionsByOutcome.replied > avgSuggestionsByOutcome.sent && (
+                      <p>✅ Documents with more suggestions get better reply rates</p>
+                    )}
+                    {outcomeStats.meetings > 0 && (
+                      <p>🎯 {Math.round((outcomeStats.meetings / totalDocuments) * 100)}% of all documents convert to meetings</p>
+                    )}
+                    {outcomeStats.sent === 0 && (
+                      <p>💡 Mark documents as "sent" to track outcomes and see AI impact</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Document Selector */}
         {documents.length > 0 && (

@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { WritingMetrics } from '../../utils/writingAnalytics'
 import { getRatingColor, getRatingText, formatTime } from '../../utils/writingAnalytics'
-import { getScoreBreakdown } from '../../utils/scoringDebug'
+import { getScoreBreakdown, type ScoreBreakdown } from '../../utils/scoringDebug'
 
 interface PerformancePanelProps {
   metrics: WritingMetrics
@@ -108,11 +108,24 @@ function RatingBar({ rating, value, label }: RatingBarProps) {
 
 export default function PerformancePanel({ metrics, text, suggestionsCount, className = '', onClose }: PerformancePanelProps) {
   const [showScoreBreakdown, setShowScoreBreakdown] = useState(false)
+  const [scoreBreakdown, setScoreBreakdown] = useState<ScoreBreakdown | null>(null)
+
+  // Load score breakdown when text and suggestionsCount are available
+  useEffect(() => {
+    if (text && typeof suggestionsCount === 'number') {
+      getScoreBreakdown(text, suggestionsCount)
+        .then(breakdown => {
+          setScoreBreakdown(breakdown)
+        })
+        .catch(error => {
+          console.error('Error loading score breakdown:', error)
+          setScoreBreakdown(null)
+        })
+    } else {
+      setScoreBreakdown(null)
+    }
+  }, [text, suggestionsCount])
   
-  // Get detailed score breakdown if text is provided
-  const scoreBreakdown = text && typeof suggestionsCount === 'number' 
-    ? getScoreBreakdown(text, suggestionsCount)
-    : null
   return (
     <div className={`bg-white rounded-lg shadow-lg border border-gray-200 p-6 ${className}`}>
       {/* Header */}

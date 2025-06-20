@@ -29,6 +29,11 @@ export interface Document {
   persona_metadata: Record<string, unknown>
   created_at: string
   updated_at: string
+  // Outcome tracking
+  sent_at?: string
+  outcome_status?: 'sent' | 'opened' | 'replied' | 'meeting_booked'
+  outcome_notes?: string
+  suggestions_used_count?: number
 }
 
 export interface Suggestion {
@@ -44,7 +49,7 @@ export interface Suggestion {
   position_end: number
 }
 
-export type Persona = 'general' | 'sales'
+// Persona type removed - everyone gets all features
 
 // Store interface
 interface AppStore {
@@ -63,7 +68,6 @@ interface AppStore {
   
   // Editor state
   content: string
-  persona: Persona
   isAnalyzing: boolean
   suggestions: Suggestion[]
   
@@ -75,7 +79,6 @@ interface AppStore {
   setCurrentDocument: (document: Document | null) => void
   setDocuments: (documents: Document[]) => void
   setContent: (content: string) => void
-  setPersona: (persona: Persona) => void
   setIsAnalyzing: (isAnalyzing: boolean) => void
   setSuggestions: (suggestions: Suggestion[]) => void
   addSuggestion: (suggestion: Suggestion) => void
@@ -91,6 +94,11 @@ interface AppStore {
   createDocument: (title: string, workspaceId: string) => Promise<Document | null>
   updateDocument: (id: string, updates: Partial<Document>) => Promise<boolean>
   deleteDocument: (id: string) => Promise<boolean>
+  
+  // Outcome tracking actions
+  markDocumentSent: (id: string) => Promise<boolean>
+  updateDocumentOutcome: (id: string, status: Document['outcome_status'], notes?: string) => Promise<boolean>
+  updateSuggestionsUsedCount: (id: string, count: number) => Promise<boolean>
   
   // AI actions
   analyzeText: (text: string, documentId?: string) => Promise<Suggestion[]>
@@ -110,7 +118,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   currentDocument: null,
   documents: [],
   content: '',
-  persona: 'general',
   isAnalyzing: false,
   suggestions: [],
   
@@ -122,7 +129,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setCurrentDocument: (currentDocument) => set({ currentDocument, content: currentDocument?.content || '' }),
   setDocuments: (documents) => set({ documents }),
   setContent: (content) => set({ content }),
-  setPersona: (persona) => set({ persona }),
   setIsAnalyzing: (isAnalyzing) => set({ isAnalyzing }),
   setSuggestions: (suggestions) => set({ suggestions }),
   
@@ -298,9 +304,91 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
   
+  // Outcome tracking actions
+  markDocumentSent: async (id) => {
+    try {
+      const { error } = await supabase
+        .from('documents')
+        .update({ 
+          sent_at: new Date().toISOString(),
+          outcome_status: 'sent'
+        })
+        .eq('id', id)
+      
+      if (error) throw error
+      
+      const documents = get().documents.map(doc => 
+        doc.id === id ? { ...doc, sent_at: new Date().toISOString(), outcome_status: 'sent' as const } : doc
+      )
+      set({ documents })
+      
+      const currentDocument = get().currentDocument
+      if (currentDocument?.id === id) {
+        set({ currentDocument: { ...currentDocument, sent_at: new Date().toISOString(), outcome_status: 'sent' as const } })
+      }
+      
+      return true
+    } catch (error) {
+      console.error('Error marking document as sent:', error)
+      return false
+    }
+  },
+  
+  updateDocumentOutcome: async (id, status, notes) => {
+    try {
+      const { error } = await supabase
+        .from('documents')
+        .update({ outcome_status: status, outcome_notes: notes })
+        .eq('id', id)
+      
+      if (error) throw error
+      
+      const documents = get().documents.map(doc => 
+        doc.id === id ? { ...doc, outcome_status: status, outcome_notes: notes } : doc
+      )
+      set({ documents })
+      
+      const currentDocument = get().currentDocument
+      if (currentDocument?.id === id) {
+        set({ currentDocument: { ...currentDocument, outcome_status: status, outcome_notes: notes } })
+      }
+      
+      return true
+    } catch (error) {
+      console.error('Error updating document outcome:', error)
+      return false
+    }
+  },
+  
+  updateSuggestionsUsedCount: async (id, count) => {
+    try {
+      const { error } = await supabase
+        .from('documents')
+        .update({ suggestions_used_count: count })
+        .eq('id', id)
+      
+      if (error) throw error
+      
+      const documents = get().documents.map(doc => 
+        doc.id === id ? { ...doc, suggestions_used_count: count } : doc
+      )
+      set({ documents })
+      
+      const currentDocument = get().currentDocument
+      if (currentDocument?.id === id) {
+        set({ currentDocument: { ...currentDocument, suggestions_used_count: count } })
+      }
+      
+      return true
+    } catch (error) {
+      console.error('Error updating suggestions used count:', error)
+      return false
+    }
+  },
+  
   // AI actions
   analyzeText: async (text, documentId) => {
-    const { persona } = get()
+    const persona = 'sales' // Everyone gets sales features
     console.log('📡 Store analyzeText called:', {
       textLength: text.length,
       textPreview: text.substring(0, 100),
@@ -404,7 +492,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         body: {
           text,
           rewrite_type: rewriteType,
-          persona: get().persona,
+          persona: 'sales', // Everyone gets sales features
           ...options
         }
       })
@@ -424,7 +512,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         body: {
           template_text: template,
           prospect_data: prospectData,
-          personalization_type: 'opener'
+          personalization_type: 'full_email'
         }
       })
       

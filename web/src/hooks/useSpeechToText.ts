@@ -7,11 +7,7 @@ interface SpeechToTextOptions {
   maxAlternatives?: number
 }
 
-interface SpeechToTextResult {
-  transcript: string
-  confidence: number
-  isFinal: boolean
-}
+
 
 interface UseSpeechToTextReturn {
   transcript: string

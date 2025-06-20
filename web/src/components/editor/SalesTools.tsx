@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useAppStore } from '../../store'
 
 interface SalesToolsProps {
-  selectedText?: string
+  content?: string // Full document content instead of selectedText
   onTextReplace?: (newText: string) => void
   className?: string
 }
@@ -17,7 +17,7 @@ interface ProspectData extends Record<string, unknown> {
   mutual_connection: string
 }
 
-export default function SalesTools({ selectedText = '', onTextReplace, className = '' }: SalesToolsProps) {
+export default function SalesTools({ content = '', onTextReplace, className = '' }: SalesToolsProps) {
   const { personalizeText, rewriteText, handleObjection } = useAppStore()
   
   // States for different tools
@@ -47,20 +47,60 @@ export default function SalesTools({ selectedText = '', onTextReplace, className
   const [objectionType, setObjectionType] = useState<string>('price')
   const [objectionText, setObjectionText] = useState('')
   
+  // Helper function to close all panels
+  const closeAllPanels = () => {
+    setIsPersonalizeOpen(false)
+    setIsToneCheckerOpen(false)
+    setIsCtaAnalyzerOpen(false)
+    setIsObjectionOpen(false)
+  }
+
+  // Helper function to toggle a specific panel (closing others)
+  const togglePanel = (panelName: 'personalize' | 'tone' | 'cta' | 'objection') => {
+    // Check if the clicked panel is already open
+    const isAlreadyOpen = 
+      (panelName === 'personalize' && isPersonalizeOpen) ||
+      (panelName === 'tone' && isToneCheckerOpen) ||
+      (panelName === 'cta' && isCtaAnalyzerOpen) ||
+      (panelName === 'objection' && isObjectionOpen)
+    
+    // If already open, close all panels (toggle off)
+    if (isAlreadyOpen) {
+      closeAllPanels()
+      return
+    }
+    
+    // Otherwise, close all panels and open the selected one
+    closeAllPanels()
+    
+    switch (panelName) {
+      case 'personalize':
+        setIsPersonalizeOpen(true)
+        break
+      case 'tone':
+        setIsToneCheckerOpen(true)
+        break
+      case 'cta':
+        setIsCtaAnalyzerOpen(true)
+        break
+      case 'objection':
+        setIsObjectionOpen(true)
+        break
+    }
+  }
+
   const handlePersonalize = async () => {
-    if (!selectedText.trim()) {
-      alert('Please select some text to personalize')
+    if (!content.trim()) {
+      alert('Please add some content to your document first')
       return
     }
     
     setIsLoading(true)
     try {
-      const personalized = await personalizeText(selectedText, prospectData)
-      if (personalized) {
-        setResult(personalized)
-        if (onTextReplace) {
-          onTextReplace(personalized)
-        }
+      const personalized = await personalizeText(content, prospectData)
+      if (personalized && onTextReplace) {
+        onTextReplace(personalized)
+        closeAllPanels() // Close panels after successful application
       }
     } catch (error) {
       console.error('Personalization error:', error)
@@ -71,22 +111,20 @@ export default function SalesTools({ selectedText = '', onTextReplace, className
   }
   
   const handleToneCheck = async () => {
-    if (!selectedText.trim()) {
-      alert('Please select some text to check tone')
+    if (!content.trim()) {
+      alert('Please add some content to your document first')
       return
     }
     
     setIsLoading(true)
     try {
-      const rewritten = await rewriteText(selectedText, 'tone', {
+      const rewritten = await rewriteText(content, 'tone', {
         target_tone: targetTone,
         brand_voice: brandVoice
       })
-      if (rewritten) {
-        setResult(rewritten)
-        if (onTextReplace) {
-          onTextReplace(rewritten)
-        }
+      if (rewritten && onTextReplace) {
+        onTextReplace(rewritten)
+        closeAllPanels() // Close panels after successful application
       }
     } catch (error) {
       console.error('Tone check error:', error)
@@ -97,23 +135,21 @@ export default function SalesTools({ selectedText = '', onTextReplace, className
   }
   
   const handleCtaAnalyze = async () => {
-    if (!selectedText.trim()) {
-      alert('Please select some text to analyze as CTA')
+    if (!content.trim()) {
+      alert('Please add some content to your document first')
       return
     }
     
     setIsLoading(true)
     try {
-      const rewritten = await rewriteText(selectedText, 'cta')
-      if (rewritten) {
-        setResult(rewritten)
-        if (onTextReplace) {
-          onTextReplace(rewritten)
-        }
+      const rewritten = await rewriteText(content, 'cta')
+      if (rewritten && onTextReplace) {
+        onTextReplace(rewritten)
+        closeAllPanels() // Close panels after successful application
       }
     } catch (error) {
       console.error('CTA analysis error:', error)
-      alert('Failed to analyze CTA. Please try again.')
+      alert('Failed to optimize CTAs. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -127,9 +163,10 @@ export default function SalesTools({ selectedText = '', onTextReplace, className
     
     setIsLoading(true)
     try {
-      const response = await handleObjection(objectionText, objectionType, selectedText)
-      if (response) {
-        setResult(response)
+      const response = await handleObjection(objectionText, objectionType, content)
+      if (response && onTextReplace) {
+        onTextReplace(response)
+        closeAllPanels() // Close panels after successful application
       }
     } catch (error) {
       console.error('Objection handling error:', error)
@@ -139,36 +176,72 @@ export default function SalesTools({ selectedText = '', onTextReplace, className
     }
   }
 
+  const hasContent = content.trim().length > 0
+  const wordCount = hasContent ? content.split(/\s+/).filter(word => word.length > 0).length : 0
+
   return (
     <div className={`bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-4 ${className}`}>
-      <h3 className="font-semibold text-blue-900 mb-3">Sales Tools</h3>
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-blue-900">Sales Tools</h3>
+        {hasContent && (
+          <span className="text-xs text-blue-700 bg-blue-100 px-2 py-1 rounded">
+            {wordCount} words ready
+          </span>
+        )}
+      </div>
+      
+      {!hasContent && (
+        <div className="text-center py-4 text-gray-500 text-sm">
+          <p>Start writing to unlock sales tools</p>
+          <p className="text-xs mt-1">Tools will automatically work with your document content</p>
+        </div>
+      )}
       
       {/* Tool Buttons */}
       <div className="grid grid-cols-2 gap-2">
         <button
-          onClick={() => setIsPersonalizeOpen(!isPersonalizeOpen)}
-          className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+          onClick={() => togglePanel('personalize')}
+          disabled={!hasContent}
+          className={`px-3 py-2 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed ${
+            isPersonalizeOpen 
+              ? 'bg-blue-800 hover:bg-blue-900' 
+              : 'bg-blue-600 hover:bg-blue-700'
+          }`}
         >
           🎯 Personalize
         </button>
         
         <button
-          onClick={() => setIsToneCheckerOpen(!isToneCheckerOpen)}
-          className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
+          onClick={() => togglePanel('tone')}
+          disabled={!hasContent}
+          className={`px-3 py-2 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed ${
+            isToneCheckerOpen 
+              ? 'bg-purple-800 hover:bg-purple-900' 
+              : 'bg-purple-600 hover:bg-purple-700'
+          }`}
         >
           🎨 Tone Check
         </button>
         
         <button
-          onClick={() => setIsCtaAnalyzerOpen(!isCtaAnalyzerOpen)}
-          className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
+          onClick={() => togglePanel('cta')}
+          disabled={!hasContent}
+          className={`px-3 py-2 text-white rounded-lg transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed ${
+            isCtaAnalyzerOpen 
+              ? 'bg-green-800 hover:bg-green-900' 
+              : 'bg-green-600 hover:bg-green-700'
+          }`}
         >
-          📞 CTA Analyzer
+          📞 CTA Optimizer
         </button>
         
         <button
-          onClick={() => setIsObjectionOpen(!isObjectionOpen)}
-          className="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+          onClick={() => togglePanel('objection')}
+          className={`px-3 py-2 text-white rounded-lg transition-colors text-sm font-medium ${
+            isObjectionOpen 
+              ? 'bg-red-800 hover:bg-red-900' 
+              : 'bg-red-600 hover:bg-red-700'
+          }`}
         >
           💬 Objections
         </button>
@@ -177,7 +250,8 @@ export default function SalesTools({ selectedText = '', onTextReplace, className
       {/* Personalize Panel */}
       {isPersonalizeOpen && (
         <div className="border border-blue-300 rounded-lg p-3 bg-white">
-          <h4 className="font-medium text-blue-900 mb-2">Personalize with Prospect Data</h4>
+          <h4 className="font-medium text-blue-900 mb-2">Personalize Entire Document</h4>
+          <p className="text-xs text-gray-600 mb-2">Add prospect details to personalize your {wordCount}-word document</p>
           <div className="grid grid-cols-2 gap-2 text-sm">
             <input
               type="text"
@@ -220,7 +294,7 @@ export default function SalesTools({ selectedText = '', onTextReplace, className
             disabled={isLoading}
             className="mt-2 w-full px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 text-sm"
           >
-            {isLoading ? 'Personalizing...' : 'Personalize Selected Text'}
+            {isLoading ? 'Personalizing...' : 'Personalize Document'}
           </button>
         </div>
       )}
@@ -228,7 +302,8 @@ export default function SalesTools({ selectedText = '', onTextReplace, className
       {/* Tone Checker Panel */}
       {isToneCheckerOpen && (
         <div className="border border-purple-300 rounded-lg p-3 bg-white">
-          <h4 className="font-medium text-purple-900 mb-2">Brand & Tone Adjustment</h4>
+          <h4 className="font-medium text-purple-900 mb-2">Adjust Document Tone & Brand</h4>
+          <p className="text-xs text-gray-600 mb-2">Apply tone and brand adjustments to your entire {wordCount}-word document</p>
           <div className="space-y-2">
             <select
               value={targetTone}
@@ -253,7 +328,7 @@ export default function SalesTools({ selectedText = '', onTextReplace, className
             disabled={isLoading}
             className="mt-2 w-full px-3 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 text-sm"
           >
-            {isLoading ? 'Adjusting...' : 'Adjust Tone & Brand'}
+            {isLoading ? 'Adjusting...' : 'Adjust Document Tone'}
           </button>
         </div>
       )}
@@ -262,13 +337,13 @@ export default function SalesTools({ selectedText = '', onTextReplace, className
       {isCtaAnalyzerOpen && (
         <div className="border border-green-300 rounded-lg p-3 bg-white">
           <h4 className="font-medium text-green-900 mb-2">Call-to-Action Optimizer</h4>
-          <p className="text-xs text-gray-600 mb-2">Select your CTA text and click to optimize for better conversion.</p>
+          <p className="text-xs text-gray-600 mb-2">Find and improve CTAs in your {wordCount}-word document</p>
           <button
             onClick={handleCtaAnalyze}
             disabled={isLoading}
-            className="w-full px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 text-sm"
+            className="mt-2 w-full px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 text-sm"
           >
-            {isLoading ? 'Optimizing...' : 'Optimize Selected CTA'}
+            {isLoading ? 'Optimizing...' : 'Optimize CTAs'}
           </button>
         </div>
       )}
@@ -277,6 +352,7 @@ export default function SalesTools({ selectedText = '', onTextReplace, className
       {isObjectionOpen && (
         <div className="border border-red-300 rounded-lg p-3 bg-white">
           <h4 className="font-medium text-red-900 mb-2">Objection Response Generator</h4>
+          <p className="text-xs text-gray-600 mb-2">Replace document with contextual objection response based on your content</p>
           <div className="space-y-2">
             <select
               value={objectionType}
@@ -308,30 +384,32 @@ export default function SalesTools({ selectedText = '', onTextReplace, className
         </div>
       )}
       
-      {/* Results Display */}
+      {/* Results Display - Only for suggestions that aren't auto-applied */}
       {result && (
         <div className="border border-gray-300 rounded-lg p-3 bg-white">
-          <h4 className="font-medium text-gray-900 mb-2">Result:</h4>
-          <div className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 p-2 rounded border">
+          <h4 className="font-medium text-gray-900 mb-2">Suggestions:</h4>
+          <div className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 p-2 rounded border max-h-40 overflow-y-auto">
             {result}
           </div>
           <button
             onClick={() => setResult('')}
-            className="mt-2 text-xs text-gray-500 hover:text-gray-700"
+            className="mt-2 text-xs px-2 py-1 text-gray-500 hover:text-gray-700 border border-gray-300 rounded"
           >
-            Clear Result
+            Clear
           </button>
         </div>
       )}
       
-      {/* Help Text */}
+      {/* Updated Help Text */}
       <div className="text-xs text-gray-600 bg-white p-2 rounded border">
-        <p><strong>Tips:</strong></p>
+        <p><strong>How it works:</strong></p>
         <ul className="list-disc list-inside space-y-1 mt-1">
-          <li>Select text in the editor before using Personalize, Tone Check, or CTA tools</li>
-          <li>Fill in prospect data for better personalization results</li>
-          <li>Use brand voice guidelines to maintain consistency</li>
-          <li>Objection responses work without selecting text</li>
+          <li>Tools automatically apply changes to your entire document</li>
+          <li>🎯 Personalize: Weaves prospect data throughout your content</li>
+          <li>🎨 Tone Check: Adjusts the whole document's tone and brand voice</li>
+          <li>📞 CTA Optimizer: Finds and improves existing calls-to-action</li>
+          <li>💬 Objections: Automatically replaces document with contextual objection responses</li>
+          <li>Use browser back/undo (Cmd+Z) to revert changes if needed</li>
         </ul>
       </div>
     </div>

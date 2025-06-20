@@ -24,6 +24,7 @@
     "@lexical/utils": "^0.32.1",
     "@supabase/supabase-js": "^2.50.0",
     "@types/react-router-dom": "^5.3.3",
+    "date-fns": "^4.1.0",
     "lexical": "^0.32.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

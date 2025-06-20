@@ -10,80 +10,110 @@ export interface ScoreBreakdown {
   explanation: string[]
 }
 
-export function getScoreBreakdown(text: string, suggestionsCount: number): ScoreBreakdown {
-  const metrics = calculateWritingMetrics(text, suggestionsCount)
+export async function getScoreBreakdown(text: string, suggestionsCount: number): Promise<ScoreBreakdown> {
+  const metrics = await calculateWritingMetrics(text, suggestionsCount)
   
-  // Recreate the scoring logic for debugging
-  let score = 85 // Base score
+  // Recreate the scoring logic for debugging (using updated algorithm)
+  let score = 70 // Updated base score
   const explanation: string[] = []
   
   explanation.push(`Starting with base score: ${score}/100`)
   
-  // Suggestion penalty
-  const suggestionPenalty = Math.min(25, suggestionsCount * 1.5)
-  score -= suggestionPenalty
-  if (suggestionPenalty > 0) {
-    explanation.push(`Pending suggestions penalty: -${suggestionPenalty} (${suggestionsCount} suggestions × 1.5 each)`)
-  } else {
-    explanation.push(`No pending suggestions: +0 (excellent!)`)
+  // If no suggestions, perfect score
+  if (suggestionsCount === 0) {
+    explanation.push(`No suggestions found: Perfect score = 100/100`)
+    return {
+      baseScore: 70,
+      suggestionPenalty: 0,
+      readabilityBonus: 0,
+      vocabularyBonus: 0,
+      lengthBonus: 0,
+      finalScore: 100,
+      explanation: [...explanation, `Final Score: 100/100`]
+    }
   }
   
-  // Readability bonus/penalty
+  // Suggestion penalty (updated algorithm)
+  const suggestionPenalty = Math.min(45, suggestionsCount * 5)
+  let extraPenalty = 0
+  if (suggestionsCount >= 5) {
+    extraPenalty = 10
+  }
+  
+  score -= suggestionPenalty + extraPenalty
+  if (suggestionPenalty > 0) {
+    explanation.push(`Suggestion penalty: -${suggestionPenalty} (${suggestionsCount} suggestions × 5 each)`)
+    if (extraPenalty > 0) {
+      explanation.push(`Multiple errors penalty: -${extraPenalty} (5+ suggestions)`)
+    }
+  }
+  
+  // Readability bonus/penalty (updated)
   let readabilityBonus = 0
-  if (metrics.readabilityScore >= 60) {
-    readabilityBonus = 10
+  if (metrics.readabilityScore >= 70) {
+    readabilityBonus = 12
+    explanation.push(`Excellent readability bonus: +${readabilityBonus} (readability score: ${metrics.readabilityScore})`)
+  } else if (metrics.readabilityScore >= 60) {
+    readabilityBonus = 8
     explanation.push(`Good readability bonus: +${readabilityBonus} (readability score: ${metrics.readabilityScore})`)
-  } else if (metrics.readabilityScore >= 40) {
-    readabilityBonus = 5
+  } else if (metrics.readabilityScore >= 50) {
+    readabilityBonus = 4
     explanation.push(`Decent readability bonus: +${readabilityBonus} (readability score: ${metrics.readabilityScore})`)
-  } else if (metrics.readabilityScore < 20) {
-    readabilityBonus = -5
+  } else if (metrics.readabilityScore < 30) {
+    readabilityBonus = -10
+    explanation.push(`Very poor readability penalty: ${readabilityBonus} (readability score: ${metrics.readabilityScore})`)
+  } else if (metrics.readabilityScore < 40) {
+    readabilityBonus = -6
     explanation.push(`Poor readability penalty: ${readabilityBonus} (readability score: ${metrics.readabilityScore})`)
   } else {
-    explanation.push(`Neutral readability: +0 (readability score: ${metrics.readabilityScore})`)
+    explanation.push(`Average readability: +0 (readability score: ${metrics.readabilityScore})`)
   }
   score += readabilityBonus
   
-  // Vocabulary bonus/penalty  
+  // Vocabulary bonus/penalty (updated)
   let vocabularyBonus = 0
-  if (metrics.uniqueWordsPercentage >= 70) {
+  if (metrics.uniqueWordsPercentage >= 85) {
+    vocabularyBonus = 12
+    explanation.push(`Exceptional vocabulary diversity: +${vocabularyBonus} (${metrics.uniqueWordsPercentage}% unique words)`)
+  } else if (metrics.uniqueWordsPercentage >= 75) {
     vocabularyBonus = 8
     explanation.push(`Excellent vocabulary diversity: +${vocabularyBonus} (${metrics.uniqueWordsPercentage}% unique words)`)
-  } else if (metrics.uniqueWordsPercentage >= 60) {
+  } else if (metrics.uniqueWordsPercentage >= 65) {
     vocabularyBonus = 4
     explanation.push(`Good vocabulary diversity: +${vocabularyBonus} (${metrics.uniqueWordsPercentage}% unique words)`)
-  } else if (metrics.uniqueWordsPercentage < 40) {
-    vocabularyBonus = -3
-    explanation.push(`Repetitive vocabulary penalty: ${vocabularyBonus} (${metrics.uniqueWordsPercentage}% unique words)`)
+  } else if (metrics.uniqueWordsPercentage < 45) {
+    vocabularyBonus = -10
+    explanation.push(`Very repetitive vocabulary penalty: ${vocabularyBonus} (${metrics.uniqueWordsPercentage}% unique words)`)
+  } else if (metrics.uniqueWordsPercentage < 55) {
+    vocabularyBonus = -5
+    explanation.push(`Below average vocabulary penalty: ${vocabularyBonus} (${metrics.uniqueWordsPercentage}% unique words)`)
   } else {
     explanation.push(`Average vocabulary diversity: +0 (${metrics.uniqueWordsPercentage}% unique words)`)
   }
   score += vocabularyBonus
   
-  // Length bonus
-  let lengthBonus = 0
-  if (metrics.words >= 100) {
-    lengthBonus = 2
-    explanation.push(`Substantial content bonus: +${lengthBonus} (${metrics.words} words)`)
-  } else {
-    explanation.push(`Short content: +0 (${metrics.words} words - bonus at 100+ words)`)
+  // Perfect writing bonus
+  let perfectBonus = 0
+  if (suggestionsCount === 0 && metrics.readabilityScore >= 60 && metrics.uniqueWordsPercentage >= 70) {
+    perfectBonus = 15
+    explanation.push(`Perfect writing bonus: +${perfectBonus} (no errors + good readability + good vocabulary)`)
   }
-  score += lengthBonus
+  score += perfectBonus
   
-  // Final constraints
-  const finalScore = Math.max(30, Math.min(100, Math.round(score)))
-  if (finalScore !== score) {
-    explanation.push(`Applied score limits (30-100): ${Math.round(score)} → ${finalScore}`)
+  // Final constraints (updated range)
+  const finalScore = Math.max(5, Math.min(100, Math.round(score)))
+  if (finalScore !== Math.round(score)) {
+    explanation.push(`Applied score limits (5-100): ${Math.round(score)} → ${finalScore}`)
   }
   
   explanation.push(`\nFinal Score: ${finalScore}/100`)
   
   return {
-    baseScore: 85,
-    suggestionPenalty: -suggestionPenalty,
+    baseScore: 70,
+    suggestionPenalty: -(suggestionPenalty + extraPenalty),
     readabilityBonus,
     vocabularyBonus,
-    lengthBonus,
+    lengthBonus: perfectBonus, // Using this field for perfect bonus since length is no longer used
     finalScore,
     explanation
   }

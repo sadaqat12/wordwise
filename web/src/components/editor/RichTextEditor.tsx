@@ -28,10 +28,7 @@ import {
   $isListNode, 
   ListItemNode, 
   ListNode, 
-  $createListItemNode, 
-  $createListNode,
-  $insertList,
-  $removeList
+  $insertList
 } from '@lexical/list'
 import { ListPlugin } from '@lexical/react/LexicalListPlugin'
 import { 
@@ -868,7 +865,6 @@ function SmartSuggestionHighlightPlugin({
 // Error component - using LexicalErrorBoundary directly
 
 export default function RichTextEditor({
-  initialContent = '',
   onContentChange,
   suggestions = [],
   onSuggestionClick,
