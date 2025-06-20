@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef, useMemo } from 'react'
 import { 
   $getRoot, 
   $getSelection, 
@@ -6,7 +6,8 @@ import {
   $createParagraphNode,
   SELECTION_CHANGE_COMMAND,
   COMMAND_PRIORITY_LOW,
-  $createTextNode
+  $createTextNode,
+  $insertNodes
 } from 'lexical'
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin'
@@ -18,7 +19,9 @@ import { $setBlocksType } from '@lexical/selection'
 import { 
   $createHeadingNode, 
   $createQuoteNode, 
-  $isHeadingNode
+  $isHeadingNode,
+  HeadingNode,
+  QuoteNode
 } from '@lexical/rich-text'
 import type { HeadingTagType } from '@lexical/rich-text'
 import { 
@@ -26,7 +29,9 @@ import {
   ListItemNode, 
   ListNode, 
   $createListItemNode, 
-  $createListNode 
+  $createListNode,
+  $insertList,
+  $removeList
 } from '@lexical/list'
 import { ListPlugin } from '@lexical/react/LexicalListPlugin'
 import { 
@@ -36,6 +41,7 @@ import {
   FORMAT_ELEMENT_COMMAND
 } from 'lexical'
 import type { Suggestion } from '../../store'
+import VoiceInput, { VoiceInputKeyboardShortcut } from './VoiceInput'
 
 interface RichTextEditorProps {
   initialContent?: string
@@ -64,34 +70,37 @@ function Toolbar() {
   const [blockType, setBlockType] = useState('paragraph')
 
   const updateToolbar = useCallback(() => {
-    const selection = $getSelection()
-    if ($isRangeSelection(selection)) {
-      setIsBold(selection.hasFormat('bold'))
-      setIsItalic(selection.hasFormat('italic'))
-      setIsUnderline(selection.hasFormat('underline'))
-      setIsStrikethrough(selection.hasFormat('strikethrough'))
-      
-      // Get block type
-      const anchorNode = selection.anchor.getNode()
-      const element = anchorNode.getKey() === 'root' 
-        ? anchorNode 
-        : anchorNode.getTopLevelElementOrThrow()
-      const elementKey = element.getKey()
-      const elementDOM = editor.getElementByKey(elementKey)
-      
-      if (elementDOM !== null) {
-        if ($isListNode(element)) {
-          const parentList = element
-          const type = parentList.getListType()
-          setBlockType(type)
-        } else {
-          const type = $isHeadingNode(element) 
-            ? element.getTag() 
-            : element.getType()
-          setBlockType(type)
+    editor.getEditorState().read(() => {
+      const selection = $getSelection()
+      if ($isRangeSelection(selection)) {
+        setIsBold(selection.hasFormat('bold'))
+        setIsItalic(selection.hasFormat('italic'))
+        setIsUnderline(selection.hasFormat('underline'))
+        setIsStrikethrough(selection.hasFormat('strikethrough'))
+        
+        // Get block type - simplified approach
+        const anchorNode = selection.anchor.getNode()
+        let element = anchorNode
+        
+        // Find the top-level block element
+        if (element.getType() === 'text') {
+          const parent = element.getParent()
+          if (parent) {
+            element = parent
+          }
+        }
+        
+        if (element) {
+          if ($isListNode(element)) {
+            setBlockType(element.getListType())
+          } else if ($isHeadingNode(element)) {
+            setBlockType(element.getTag())
+          } else {
+            setBlockType(element.getType())
+          }
         }
       }
-    }
+    })
   }, [editor])
 
   useEffect(() => {
@@ -109,69 +118,50 @@ function Toolbar() {
     editor.dispatchCommand(FORMAT_TEXT_COMMAND, format)
   }
 
-  const formatHeading = (headingSize: HeadingTagType) => {
-    if (blockType !== headingSize) {
-      editor.update(() => {
-        const selection = $getSelection()
-        if ($isRangeSelection(selection)) {
-          $setBlocksType(selection, () => $createHeadingNode(headingSize))
-        }
-      })
-    }
+    const formatHeading = (headingSize: HeadingTagType) => {
+    editor.update(() => {
+      const selection = $getSelection()
+      if ($isRangeSelection(selection)) {
+        $setBlocksType(selection, () => $createHeadingNode(headingSize))
+      }
+    })
+    setTimeout(() => updateToolbar(), 0)
   }
 
   const formatParagraph = () => {
-    if (blockType !== 'paragraph') {
-      editor.update(() => {
-        const selection = $getSelection()
-        if ($isRangeSelection(selection)) {
-          $setBlocksType(selection, () => $createParagraphNode())
-        }
-      })
-    }
+    editor.update(() => {
+      const selection = $getSelection()
+      if ($isRangeSelection(selection)) {
+        $setBlocksType(selection, () => $createParagraphNode())
+      }
+    })
+    // Update toolbar after formatting
+    setTimeout(() => updateToolbar(), 0)
   }
 
   const formatQuote = () => {
-    if (blockType !== 'quote') {
-      editor.update(() => {
-        const selection = $getSelection()
-        if ($isRangeSelection(selection)) {
-          $setBlocksType(selection, () => $createQuoteNode())
-        }
-      })
-    }
+    editor.update(() => {
+      const selection = $getSelection()
+      if ($isRangeSelection(selection)) {
+        $setBlocksType(selection, () => $createQuoteNode())
+      }
+    })
+    // Update toolbar after formatting
+    setTimeout(() => updateToolbar(), 0)
   }
 
   const formatBulletList = () => {
-    if (blockType !== 'bullet') {
-      editor.update(() => {
-        const selection = $getSelection()
-        if ($isRangeSelection(selection)) {
-          $setBlocksType(selection, () => {
-            const listNode = $createListNode('bullet')
-            const listItemNode = $createListItemNode()
-            listNode.append(listItemNode)
-            return listNode
-          })
-        }
-      })
-    }
+    editor.update(() => {
+      $insertList('bullet')
+    })
+    setTimeout(() => updateToolbar(), 0)
   }
 
   const formatNumberList = () => {
-    if (blockType !== 'number') {
-      editor.update(() => {
-        const selection = $getSelection()
-        if ($isRangeSelection(selection)) {
-          $setBlocksType(selection, () => {
-            const listNode = $createListNode('number')
-            const listItemNode = $createListItemNode()
-            listNode.append(listItemNode)
-            return listNode
-          })
-        }
-      })
-    }
+    editor.update(() => {
+      $insertList('number')
+    })
+    setTimeout(() => updateToolbar(), 0)
   }
 
   const formatAlignment = (alignment: 'left' | 'center' | 'right' | 'justify') => {
@@ -295,7 +285,7 @@ function Toolbar() {
       </div>
 
       {/* Alignment */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 mr-2">
         <button
           onClick={() => formatAlignment('left')}
           className="p-2 rounded hover:bg-gray-200 transition-colors"
@@ -323,6 +313,11 @@ function Toolbar() {
             <path d="M3 21h18v-2H3v2zm6-4h12v-2H9v2zm-6-4h18v-2H3v2zm6-4h12V7H9v2zM3 3v2h18V3H3z"/>
           </svg>
         </button>
+      </div>
+
+      {/* Voice Input */}
+      <div className="flex items-center border-l border-gray-300 pl-2">
+        <VoiceInputPlugin />
       </div>
     </div>
   )
@@ -435,6 +430,69 @@ function ExternalContentUpdatePlugin({ content }: { content?: string }) {
   return null
 }
 
+// Voice Input Plugin - integrates speech-to-text with Lexical editor
+function VoiceInputPlugin() {
+  const [editor] = useLexicalComposerContext()
+  const [voiceError, setVoiceError] = useState<string | null>(null)
+  const toggleVoiceRef = useRef<(() => void) | null>(null)
+
+  const handleTranscriptUpdate = useCallback((transcript: string) => {
+    if (!transcript.trim()) return
+
+    editor.update(() => {
+      const selection = $getSelection()
+      
+      if ($isRangeSelection(selection)) {
+        // Insert at current cursor position
+        const textNode = $createTextNode(transcript)
+        $insertNodes([textNode])
+      } else {
+        // If no selection, append to the end of the document
+        const root = $getRoot()
+        
+        // Always create a new paragraph for voice input to ensure clean insertion
+        const paragraph = $createParagraphNode()
+        paragraph.append($createTextNode(transcript))
+        root.append(paragraph)
+      }
+    })
+  }, [editor])
+
+  const handleVoiceError = useCallback((error: string) => {
+    setVoiceError(error)
+    // Auto-clear error after 5 seconds
+    setTimeout(() => setVoiceError(null), 5000)
+  }, [])
+
+  return (
+    <div className="relative">
+      <VoiceInput 
+        onTranscriptUpdate={handleTranscriptUpdate}
+        onError={handleVoiceError}
+        className="flex items-center"
+        onToggleRef={(toggleFn) => {
+          toggleVoiceRef.current = toggleFn
+        }}
+      />
+      
+      {/* Voice Input Keyboard Shortcut */}
+      <VoiceInputKeyboardShortcut onToggle={() => {
+        if (toggleVoiceRef.current) {
+          toggleVoiceRef.current()
+        }
+      }} />
+      
+      {/* Error Toast */}
+      {voiceError && (
+        <div className="absolute top-full mt-2 right-0 bg-red-100 border border-red-300 text-red-700 px-3 py-2 rounded-lg shadow-lg z-50 max-w-xs">
+          <div className="text-sm font-medium">Voice Input Error</div>
+          <div className="text-xs mt-1">{voiceError}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Smart suggestion highlighting plugin - typing-aware approach
 function SmartSuggestionHighlightPlugin({ 
   suggestions = [], 
@@ -545,47 +603,8 @@ function SmartSuggestionHighlightPlugin({
     })
   }, [editor, suggestions])
   
-  // Track typing state and apply highlights
-  useEffect(() => {
-    const editorElement = editor.getRootElement()
-    if (!editorElement) return
-
-    const handleKeydown = () => {
-      setIsTyping(true)
-      
-      // Clear previous timeout
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current)
-      }
-      
-      // Show highlights again after user stops typing
-      typingTimeoutRef.current = setTimeout(() => {
-        setIsTyping(false)
-      }, 1000)
-    }
-
-    editorElement.addEventListener('keydown', handleKeydown)
-    
-    return () => {
-      editorElement.removeEventListener('keydown', handleKeydown)
-    }
-  }, [editor])
-
-  // Apply highlights when suggestions change and not typing
-  useEffect(() => {
-    if (isTyping) {
-      clearHighlights()
-      return
-    }
-
-    const timeoutId = setTimeout(() => {
-      applyHighlights()
-    }, 100)
-
-    return () => clearTimeout(timeoutId)
-  }, [suggestions, isTyping, clearHighlights, applyHighlights])
-
-  const createHighlightElement = (
+  // Create highlight element function
+  const createHighlightElement = useCallback((
     editorElement: HTMLElement, 
     startIndex: number, 
     endIndex: number, 
@@ -770,7 +789,47 @@ function SmartSuggestionHighlightPlugin({
     } else {
       console.log('❌ Could not find text nodes for highlight')
     }
-  }
+  }, [])
+  
+  // Track typing state and apply highlights
+  useEffect(() => {
+    const editorElement = editor.getRootElement()
+    if (!editorElement) return
+
+    const handleKeydown = () => {
+      setIsTyping(true)
+      
+      // Clear previous timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current)
+      }
+      
+      // Show highlights again after user stops typing
+      typingTimeoutRef.current = setTimeout(() => {
+        setIsTyping(false)
+      }, 1000)
+    }
+
+    editorElement.addEventListener('keydown', handleKeydown)
+    
+    return () => {
+      editorElement.removeEventListener('keydown', handleKeydown)
+    }
+  }, [editor])
+
+  // Apply highlights when suggestions change and not typing
+  useEffect(() => {
+    if (isTyping) {
+      clearHighlights()
+      return
+    }
+
+    const timeoutId = setTimeout(() => {
+      applyHighlights()
+    }, 100)
+
+    return () => clearTimeout(timeoutId)
+  }, [suggestions, isTyping, clearHighlights, applyHighlights])
 
   // Handle clicks on highlights
   useEffect(() => {
@@ -819,42 +878,19 @@ export default function RichTextEditor({
   content
 }: RichTextEditorProps) {
 
-  const initialConfig = {
+  const initialConfig = useMemo(() => ({
     namespace: 'WordwiseEditor',
     theme,
     onError: (error: Error) => {
       console.error('Lexical editor error:', error)
     },
     nodes: [
+      HeadingNode,
+      QuoteNode,
       ListNode,
       ListItemNode
-    ],
-    editorState: initialContent ? JSON.stringify({
-      root: {
-        children: [{
-          children: [{
-            detail: 0,
-            format: 0,
-            mode: "normal",
-            style: "",
-            text: initialContent,
-            type: "text",
-            version: 1
-          }],
-          direction: "ltr",
-          format: "",
-          indent: 0,
-          type: "paragraph",
-          version: 1
-        }],
-        direction: "ltr",
-        format: "",
-        indent: 0,
-        type: "root",
-        version: 1
-      }
-    }) : null
-  }
+    ]
+  }), [])
 
   const handleContentChange = useCallback((content: string, html: string) => {
     onContentChange?.(content, html)
@@ -948,15 +984,18 @@ export default function RichTextEditor({
           .editor-list-ol {
             padding-left: 24px;
             margin: 8px 0;
+            list-style-type: decimal;
           }
           
           .editor-list-ul {
             padding-left: 24px;
             margin: 8px 0;
+            list-style-type: disc;
           }
           
           .editor-listitem {
             margin: 4px 0;
+            display: list-item;
           }
           
           .editor-nested-listitem {
