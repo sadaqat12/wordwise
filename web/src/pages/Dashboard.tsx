@@ -4,6 +4,8 @@ import { useRequireAuth } from '../hooks/useAuth'
 import { useAppStore, supabase } from '../store'
 import WorkspaceSelector from '../components/workspace/WorkspaceSelector'
 import CreateWorkspaceModal from '../components/workspace/CreateWorkspaceModal'
+import WritingSummary from '../components/analytics/WritingSummary'
+import type { Suggestion, Document } from '../store'
 
 const Dashboard = () => {
   const isAuthenticated = useRequireAuth()
@@ -17,13 +19,18 @@ const Dashboard = () => {
     setDocuments,
     setCurrentWorkspace,
     createDocument,
-    signOut
+    deleteDocument,
+    signOut,
+    markDocumentSent,
+    updateDocumentOutcome
   } = useAppStore()
 
   console.log('Dashboard render - isAuthenticated:', isAuthenticated, 'user:', user?.email)
 
   const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [allSuggestions, setAllSuggestions] = useState<Suggestion[]>([])
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(true)
 
   useEffect(() => {
     if (!isAuthenticated || !user) return
@@ -76,6 +83,40 @@ const Dashboard = () => {
     loadDocuments()
   }, [currentWorkspace, setDocuments])
 
+  // Fetch all suggestions for documents in the workspace
+  useEffect(() => {
+    const fetchAllSuggestions = async () => {
+      if (documents.length === 0) {
+        setAllSuggestions([])
+        setIsLoadingSuggestions(false)
+        return
+      }
+
+      try {
+        const documentIds = documents.map(doc => doc.id)
+        const { data: suggestionsData, error } = await supabase
+          .from('suggestions')
+          .select('*')
+          .in('doc_id', documentIds)
+          .order('created_at', { ascending: false })
+
+        if (error) {
+          console.error('Error fetching suggestions:', error)
+          setAllSuggestions([])
+        } else {
+          setAllSuggestions(suggestionsData || [])
+        }
+      } catch (error) {
+        console.error('Error fetching suggestions:', error)
+        setAllSuggestions([])
+      } finally {
+        setIsLoadingSuggestions(false)
+      }
+    }
+
+    fetchAllSuggestions()
+  }, [documents])
+
   const handleCreateDocument = async () => {
     if (!currentWorkspace) return
 
@@ -84,6 +125,107 @@ const Dashboard = () => {
     
     if (newDoc) {
       navigate(`/editor/${newDoc.id}`)
+    }
+  }
+
+  const handleDownloadDocument = (doc: typeof documents[0], event: React.MouseEvent) => {
+    event.stopPropagation() // Prevent navigation to editor
+    
+    // Create a blob with the document content
+    const content = doc.content || 'This document is empty.'
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    
+    // Create download link
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${doc.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.txt`
+    
+    // Trigger download
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    // Clean up
+    URL.revokeObjectURL(url)
+  }
+
+  const handleDeleteDocument = async (doc: typeof documents[0], event: React.MouseEvent) => {
+    event.stopPropagation() // Prevent navigation to editor
+    
+    if (!confirm(`Are you sure you want to delete "${doc.title}"? This action cannot be undone.`)) {
+      return
+    }
+    
+    try {
+      const success = await deleteDocument(doc.id)
+      if (success) {
+        console.log(`Document "${doc.title}" deleted successfully`)
+        // The documents list will automatically update via the store
+      } else {
+        alert('Failed to delete document. Please try again.')
+      }
+    } catch (error) {
+      console.error('Error deleting document:', error)
+      alert('Failed to delete document. Please try again.')
+    }
+  }
+
+  const handleMarkAsSent = async (doc: Document, event: React.MouseEvent) => {
+    event.stopPropagation()
+    
+    try {
+      const success = await markDocumentSent(doc.id)
+      if (!success) {
+        alert('Failed to mark document as sent. Please try again.')
+      }
+    } catch (error) {
+      console.error('Error marking document as sent:', error)
+      alert('Failed to mark document as sent. Please try again.')
+    }
+  }
+
+  const handleUpdateOutcome = async (doc: Document, status: Document['outcome_status'], event: React.MouseEvent) => {
+    event.stopPropagation()
+    
+    try {
+      const success = await updateDocumentOutcome(doc.id, status)
+      if (!success) {
+        alert('Failed to update outcome. Please try again.')
+      }
+    } catch (error) {
+      console.error('Error updating outcome:', error)
+      alert('Failed to update outcome. Please try again.')
+    }
+  }
+
+  const getOutcomeColor = (status?: Document['outcome_status'], sentAt?: string) => {
+    // Handle legacy documents that have sent_at but no outcome_status
+    if (!status && sentAt) {
+      return 'bg-blue-100 text-blue-800'
+    }
+    
+    switch (status) {
+      case 'sent': return 'bg-blue-100 text-blue-800'
+      case 'opened': return 'bg-yellow-100 text-yellow-800'
+      case 'replied': return 'bg-green-100 text-green-800'
+      case 'meeting_booked': return 'bg-purple-100 text-purple-800'
+      default: return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  const getOutcomeLabel = (status?: Document['outcome_status'], sentAt?: string) => {
+    // Handle legacy documents that have sent_at but no outcome_status
+    if (!status && sentAt) {
+      return 'Sent'
+    }
+    
+    switch (status) {
+      case 'sent': return 'Sent'
+      case 'opened': return 'Opened'
+      case 'replied': return 'Replied'
+      case 'meeting_booked': return 'Meeting Booked'
+      default: return 'Draft'
     }
   }
 
@@ -186,6 +328,15 @@ const Dashboard = () => {
             <div className="flex items-center space-x-4">
               <span className="text-sm text-gray-600">Welcome, {user?.name}</span>
               <button
+                onClick={() => navigate('/insights')}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                Analytics
+              </button>
+              <button
                 onClick={handleSignOut}
                 className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
               >
@@ -249,21 +400,122 @@ const Dashboard = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {documents.map((doc) => (
-              <div
-                key={doc.id}
-                onClick={() => navigate(`/editor/${doc.id}`)}
-                className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer"
-              >
-                <h3 className="font-medium text-gray-900 mb-2 truncate">{doc.title}</h3>
-                <p className="text-sm text-gray-500 mb-4">
-                  Updated {new Date(doc.updated_at).toLocaleDateString()}
-                </p>
-                <div className="text-xs text-gray-400">
-                  {doc.content ? `${doc.content.split(' ').length} words` : 'Empty document'}
+            {documents.map((doc) => {
+                              const hasContent = doc.content && doc.content.trim().length > 0
+                
+                // Get the actual suggestions count for this document to calculate accurate score
+                const documentSuggestions = allSuggestions.filter(s => 
+                  s.doc_id === doc.id && s.status === 'pending'
+                )
+                // Simple fallback metrics for dashboard display
+                const fallbackScore = hasContent ? (documentSuggestions.length === 0 ? 100 : Math.max(5, 70 - (documentSuggestions.length * 5))) : 0
+                const wordCount = hasContent ? doc.content.split(/\s+/).filter((w: string) => w.length > 0).length : 0
+                const metrics = hasContent ? { textScore: fallbackScore, words: wordCount } : null
+              
+              return (
+                <div
+                  key={doc.id}
+                  className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow relative group"
+                >
+                  {/* Action buttons - visible on hover */}
+                  <div className="absolute top-4 right-4 flex space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => handleDownloadDocument(doc, e)}
+                      className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                      title="Download document"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={(e) => handleDeleteDocument(doc, e)}
+                      className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-sm"
+                      title="Delete document"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Main card content - clickable area */}
+                  <div
+                    onClick={() => navigate(`/editor/${doc.id}`)}
+                    className="cursor-pointer"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <h3 className="font-medium text-gray-900 truncate pr-4">{doc.title}</h3>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getOutcomeColor(doc.outcome_status, doc.sent_at)}`}>
+                        {getOutcomeLabel(doc.outcome_status, doc.sent_at)}
+                      </span>
+                    </div>
+                    
+                    <div className="space-y-1 mb-4">
+                      <p className="text-sm text-gray-500">
+                        Updated {new Date(doc.updated_at).toLocaleDateString()}
+                      </p>
+                      {doc.sent_at && (
+                        <p className="text-sm text-gray-500">
+                          Sent {new Date(doc.sent_at).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                    
+                    {metrics && !isLoadingSuggestions ? (
+                      <WritingSummary metrics={metrics} compact={true} />
+                    ) : isLoadingSuggestions ? (
+                      <div className="text-xs text-gray-400 animate-pulse">
+                        Loading metrics...
+                      </div>
+                    ) : (
+                      <div className="text-xs text-gray-400">
+                        Empty document
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Outcome tracking buttons */}
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    {!doc.sent_at ? (
+                      <button
+                        onClick={(e) => handleMarkAsSent(doc, e)}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors"
+                      >
+                        📤 Mark as Sent
+                      </button>
+                    ) : (
+                      <div className="flex space-x-2">
+                        {(doc.outcome_status === 'sent' || (!doc.outcome_status && doc.sent_at)) && (
+                          <button
+                            onClick={(e) => handleUpdateOutcome(doc, 'opened', e)}
+                            className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors"
+                          >
+                            👀 Opened
+                          </button>
+                        )}
+                        {(doc.outcome_status === 'sent' || doc.outcome_status === 'opened' || (!doc.outcome_status && doc.sent_at)) && (
+                          <button
+                            onClick={(e) => handleUpdateOutcome(doc, 'replied', e)}
+                            className="flex-1 bg-green-600 hover:bg-green-700 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors"
+                          >
+                            💬 Replied
+                          </button>
+                        )}
+                        {(doc.outcome_status === 'replied') && (
+                          <button
+                            onClick={(e) => handleUpdateOutcome(doc, 'meeting_booked', e)}
+                            className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors"
+                          >
+                            📅 Meeting
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </main>

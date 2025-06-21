@@ -248,27 +248,54 @@ Find ALL errors and respond with ONLY the JSON array:`
     }).filter(s => s.original.length > 0) // Remove suggestions with empty original text
 
     // Add persona tags and save to database if document_id provided
-    if (document_id && suggestions.length > 0) {
-      const suggestionsWithPersona = suggestions.map(s => ({
-        ...s,
-        persona_tag: persona,
-        doc_id: document_id,
-      }))
-
-      // Insert suggestions into database
-      const { error: insertError } = await supabaseClient
+    let dbSuggestions = suggestions
+    if (document_id) {
+      // First, clean up old pending suggestions for this document to prevent accumulation
+      console.log('Cleaning up old pending suggestions for document:', document_id)
+      const { error: cleanupError } = await supabaseClient
         .from('suggestions')
-        .insert(suggestionsWithPersona)
+        .delete()
+        .eq('doc_id', document_id)
+        .eq('status', 'pending')
 
-      if (insertError) {
-        console.error('Database insert error:', insertError)
-        // Continue anyway - don't fail the request for database issues
+      if (cleanupError) {
+        console.error('Error cleaning up old suggestions:', cleanupError)
+        // Continue anyway - don't fail the request for cleanup issues
+      } else {
+        console.log('Successfully cleaned up old pending suggestions')
+      }
+
+      // Now insert new suggestions if any
+      if (suggestions.length > 0) {
+        const suggestionsWithPersona = suggestions.map(s => ({
+          ...s,
+          persona_tag: persona,
+          doc_id: document_id,
+        }))
+
+        // Insert suggestions into database and get back the IDs
+        const { data: insertedSuggestions, error: insertError } = await supabaseClient
+          .from('suggestions')
+          .insert(suggestionsWithPersona)
+          .select('*')
+
+        if (insertError) {
+          console.error('Database insert error:', insertError)
+          // Continue anyway - don't fail the request for database issues
+        } else if (insertedSuggestions) {
+          // Use the database suggestions with their actual IDs
+          dbSuggestions = insertedSuggestions
+          console.log('Successfully saved suggestions to database with IDs')
+        }
+      } else {
+        console.log('No new suggestions to insert')
+        dbSuggestions = []
       }
     }
 
     return new Response(
       JSON.stringify({ 
-        suggestions: suggestions.map(s => ({ ...s, persona_tag: persona })),
+        suggestions: dbSuggestions.map(s => ({ ...s, persona_tag: persona })),
         analysis_time: new Date().toISOString(),
         persona_used: persona
       }),

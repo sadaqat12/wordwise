@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '../../store'
-import SalesTools from './SalesTools'
-import HighlightedTextEditor from './HighlightedTextEditor'
+import RichTextEditor from './RichTextEditor'
+import SuggestionsSidebar from './SuggestionsSidebar'
 
 interface WorkingTextEditorProps {
   initialContent?: string
@@ -31,7 +31,7 @@ export default function WorkingTextEditor({
     updateSuggestion, 
     setContent: setStoreContent,
     analyzeText,
-    persona
+    updateSuggestionsUsedCount
   } = useAppStore()
 
   const handleContentChange = (newContent: string) => {
@@ -100,7 +100,7 @@ export default function WorkingTextEditor({
 
   const handleTextReplace = (newText: string) => {
     if (selectedText) {
-      // Find the selected text in the content and replace it
+      // Replace selected text only
       const startIndex = content.indexOf(selectedText)
       if (startIndex !== -1) {
         const newContent = content.substring(0, startIndex) + newText + content.substring(startIndex + selectedText.length)
@@ -114,6 +114,21 @@ export default function WorkingTextEditor({
         
         // Don't auto-analyze for sales tool changes to preserve existing suggestions
       }
+    } else {
+      // Replace entire document content (for sales tools)
+      console.log('🔄 Replacing entire document content via sales tools')
+      setContent(newText)
+      setStoreContent(newText)
+      
+      // Update the initialized content ref to prevent re-initialization
+      initializedContentRef.current = newText
+      
+      if (onContentChange) {
+        onContentChange(newText)
+      }
+      
+      // Don't auto-analyze to preserve existing suggestions
+      console.log('✅ Document content replaced successfully')
     }
   }
 
@@ -198,6 +213,11 @@ export default function WorkingTextEditor({
     applyContentChange(newContent, originalText, replacementText, suggestionId)
   }
   
+  const refreshDatabaseSuggestions = async () => {
+    // Database suggestions are now handled by the store
+    return
+  }
+
   const applyContentChange = (newContent: string, originalText: string, replacementText: string, acceptedSuggestionId: string) => {
     console.log('🔧 Applying suggestion text change:', {
       original: originalText,
@@ -222,7 +242,17 @@ export default function WorkingTextEditor({
     }
     
     // Mark the accepted suggestion as accepted (this keeps it in the list but changes status)
-    updateSuggestion(acceptedSuggestionId, { status: 'accepted' })
+    updateSuggestion(acceptedSuggestionId, { status: 'accepted' }).then(() => {
+      // Refresh database suggestions to update performance score
+      refreshDatabaseSuggestions()
+    })
+    
+    // Update the suggestions used count for outcome tracking
+    if (documentId) {
+      // Count current accepted suggestions + 1 for this new one
+      const currentAcceptedCount = suggestions.filter(s => s.status === 'accepted').length
+      updateSuggestionsUsedCount(documentId, currentAcceptedCount + 1)
+    }
     
     console.log('✅ Applied suggestion - other suggestions preserved')
     
@@ -243,8 +273,23 @@ export default function WorkingTextEditor({
 
   const handleRejectSuggestion = (suggestionId: string) => {
     console.log('Rejecting suggestion:', suggestionId)
-    updateSuggestion(suggestionId, { status: 'rejected' })
+    updateSuggestion(suggestionId, { status: 'rejected' }).then(() => {
+      // Refresh database suggestions to update performance score
+      refreshDatabaseSuggestions()
+    })
   }
+
+  // Database suggestions are now handled by the store
+
+  // Refresh database suggestions when new analysis completes
+  useEffect(() => {
+    if (documentId && !isAnalyzing && suggestions.length > 0) {
+      // Analysis just completed, refresh database suggestions after a short delay
+      setTimeout(() => {
+        refreshDatabaseSuggestions()
+      }, 1000)
+    }
+  }, [isAnalyzing, documentId, suggestions.length])
 
   // Initialize content and trigger analysis
   useEffect(() => {
@@ -286,14 +331,14 @@ export default function WorkingTextEditor({
     } else {
       console.log('⏭️ Skipping initialization - same content as before (suggestion update)')
     }
-  }, [initialContent, documentId]) // Keep both dependencies but use ref to prevent unnecessary clearing
+  }, [initialContent, documentId, setSuggestions]) // Keep both dependencies but use ref to prevent unnecessary clearing
 
   // Helper function to trigger AI analysis
   const triggerAnalysis = async (textToAnalyze: string) => {
     console.log('🤖 triggerAnalysis called:', {
       textLength: textToAnalyze.length,
       textPreview: textToAnalyze.substring(0, 100),
-      persona,
+      persona: 'sales', // Everyone gets sales features
       documentId,
       isApplyingSuggestion
     })
@@ -332,209 +377,64 @@ export default function WorkingTextEditor({
     }
   }
 
-  // Manual re-analyze function for troubleshooting
-  const handleManualAnalyze = () => {
-    console.log('🔄 Manual analysis triggered by user')
-    
-    // Reset flags and state for fresh analysis
-    setIsApplyingSuggestion(false)
-    setLastAnalyzedContent('') // Reset to force fresh analysis
-    
-    // Clear any pending timers
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current)
-    }
-    if (analysisRef.current) {
-      clearTimeout(analysisRef.current)
-    }
-    
-    console.log('🎯 Starting manual fresh analysis...')
-    triggerAnalysis(content)
-  }
+
 
   // Cleanup
   useEffect(() => {
+    const currentDebounceRef = debounceRef.current
+    const currentAnalysisRef = analysisRef.current
     return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current)
+      if (currentDebounceRef) {
+        clearTimeout(currentDebounceRef)
       }
-      if (analysisRef.current) {
-        clearTimeout(analysisRef.current)
+      if (currentAnalysisRef) {
+        clearTimeout(currentAnalysisRef)
       }
     }
   }, [])
 
-  const pendingSuggestions = suggestions.filter(s => s.status === 'pending')
-  
   // Only log if we have suggestions to avoid spam
   if (suggestions.length > 0) {
-    console.log(`📝 Active suggestions: ${suggestions.length} total, ${pendingSuggestions.length} pending`)
+    console.log(`📝 Active suggestions: ${suggestions.length} total, ${suggestions.filter(s => s.status === 'pending').length} pending`)
   }
 
-  // Check if suggestions might be stale
-  const suggestionsStale = content.trim() !== lastAnalyzedContent.trim() && 
-                          content.trim().length > 5 && 
-                          !isAnalyzing &&
-                          suggestions.some(s => s.status === 'pending')
-
   return (
-    <div className={className}>
-      {/* Sales Tools - Show when persona is 'sales' */}
-      {persona === 'sales' && (
-        <div className="mb-4">
-          <SalesTools 
-            selectedText={selectedText}
-            onTextReplace={handleTextReplace}
-          />
-        </div>
-      )}
-      
-      <div className="flex h-full">
-        {/* Editor */}
-        <div className="flex-1 relative">
-          <HighlightedTextEditor
-            initialContent={content}
-            onContentChange={handleContentChange}
-            suggestions={suggestions}
-            onSuggestionClick={(suggestion) => handleAcceptSuggestion(suggestion.id)}
-            onTextSelection={handleTextSelection}
-            placeholder="Start writing your document... (Try typing some text with intentional mistakes)"
-            className="w-full h-full"
-          />
-          
-          {/* Status indicator */}
-          <div className="absolute bottom-4 right-4 flex items-center space-x-2 text-sm text-gray-500 bg-white/80 rounded px-2 py-1">
-            {isAnalyzing && (
-              <span className="flex items-center text-blue-600">
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2"></div>
-                Analyzing...
-              </span>
-            )}
-            <span>{content.split(/\s+/).filter(word => word.length > 0).length} words</span>
-          </div>
-        </div>
-
-        {/* Suggestions Panel */}
-        <div className="w-80 bg-gray-50 border-l border-gray-200 p-4 overflow-y-auto">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-900">
-              {pendingSuggestions.length > 0 ? (
-                `${pendingSuggestions.length} Writing Suggestion${pendingSuggestions.length !== 1 ? 's' : ''}`
-              ) : (
-                'AI Writing Assistant'
-              )}
-            </h3>
-            
-            {/* Stale suggestions indicator */}
-            {suggestionsStale && (
-              <button
-                onClick={handleManualAnalyze}
-                disabled={isAnalyzing}
-                className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded hover:bg-orange-200 disabled:opacity-50 transition-colors"
-                title="Text has changed - refresh for new suggestions"
-              >
-                {isAnalyzing ? '⏳' : '🔄 Refresh'}
-              </button>
-            )}
-          </div>
-          
-          {/* Stale warning */}
-          {suggestionsStale && pendingSuggestions.length > 0 && (
-            <div className="mb-3 p-2 bg-orange-50 border border-orange-200 rounded text-xs">
-              <div className="flex items-center text-orange-700">
-                <span className="mr-1">⚠️</span>
-                <span>Text changed - suggestions may be outdated</span>
-              </div>
-            </div>
+    <div className={`flex h-full ${className}`}>
+      {/* Editor */}
+      <div className="flex-1 relative">
+        <RichTextEditor
+          initialContent={content}
+          content={content}
+          onContentChange={handleContentChange}
+          suggestions={suggestions}
+          onSuggestionClick={(suggestion) => handleAcceptSuggestion(suggestion.id)}
+          onTextSelection={handleTextSelection}
+          placeholder="Start writing your document... (Try typing some text with intentional mistakes)"
+          className="w-full h-full"
+        />
+        
+        {/* Status indicator */}
+        <div className="absolute bottom-4 right-4 flex items-center space-x-2 text-sm text-gray-500 bg-white/80 rounded px-2 py-1">
+          {isAnalyzing && (
+            <span className="flex items-center text-blue-600">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse mr-2"></div>
+              Analyzing...
+            </span>
           )}
-          
-          {pendingSuggestions.length === 0 && (
-            <div className="text-sm text-gray-600 bg-white rounded-lg p-4 border border-gray-200">
-              <p className="mb-2">✍️ <strong>Write something to get started!</strong></p>
-              <p className="text-xs text-gray-500 mb-3">
-                Try typing text with intentional errors or style issues. The AI will analyze your writing and provide suggestions.
-              </p>
-              {isAnalyzing && (
-                <p className="text-xs text-blue-600 mt-2">
-                  🔍 Currently analyzing your text...
-                </p>
-              )}
-              {suggestions.length > 0 && (
-                <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded">
-                  <p className="text-xs text-green-600 font-medium">✅ Good work! You've addressed all suggestions.</p>
-                  <p className="text-xs text-green-500">Keep writing for more AI assistance.</p>
-                </div>
-              )}
-              
-              {/* Manual Re-analyze Button */}
-              {content.trim().length > 5 && (
-                <div className="mt-3 pt-3 border-t border-gray-200">
-                  <button
-                    onClick={handleManualAnalyze}
-                    disabled={isAnalyzing}
-                    className="w-full px-3 py-2 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 transition-colors"
-                  >
-                    {isAnalyzing ? 'Analyzing...' : '🔄 Analyze Document'}
-                  </button>
-                  <p className="text-xs text-gray-400 mt-1 text-center">
-                    Get AI suggestions for your text
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-          
-          <div className="space-y-3">
-            {pendingSuggestions.map((suggestion) => (
-              <div 
-                key={suggestion.id} 
-                className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className={`px-2 py-1 text-xs font-medium rounded ${
-                    suggestion.type === 'grammar' ? 'bg-red-100 text-red-800' :
-                    suggestion.type === 'style' ? 'bg-blue-100 text-blue-800' :
-                    suggestion.type === 'vocabulary' ? 'bg-green-100 text-green-800' :
-                    suggestion.type === 'spelling' ? 'bg-orange-100 text-orange-800' :
-                    'bg-yellow-100 text-yellow-800'
-                  }`}>
-                    {suggestion.type}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    {Math.round(suggestion.confidence * 100)}%
-                  </span>
-                </div>
-                
-                <div className="text-sm mb-3">
-                  <div className="text-gray-600 mb-1">
-                    <span className="line-through">"{suggestion.original}"</span>
-                  </div>
-                  <div className="text-gray-900 font-medium">
-                    "{suggestion.suggestion}"
-                  </div>
-                </div>
-                
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => handleAcceptSuggestion(suggestion.id)}
-                    className="flex-1 px-3 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors"
-                  >
-                    Accept
-                  </button>
-                  <button
-                    onClick={() => handleRejectSuggestion(suggestion.id)}
-                    className="flex-1 px-3 py-2 bg-gray-400 text-white text-sm rounded hover:bg-gray-500 transition-colors"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          
-
+          <span>{content.split(/\s+/).filter(word => word.length > 0).length} words</span>
         </div>
       </div>
+
+      {/* Grammarly-style Suggestions Sidebar */}
+      <SuggestionsSidebar
+        suggestions={suggestions}
+        onSuggestionClick={(suggestion) => handleAcceptSuggestion(suggestion.id)}
+        onSuggestionReject={handleRejectSuggestion}
+        onTextReplace={handleTextReplace}
+        content={content}
+        isAnalyzing={isAnalyzing}
+        className="w-80"
+      />
     </div>
   )
 } 

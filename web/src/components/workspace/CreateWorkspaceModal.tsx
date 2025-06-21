@@ -57,8 +57,8 @@ const CreateWorkspaceModal = ({ isOpen, onClose }: CreateWorkspaceModalProps) =>
       // Reset form and close modal
       setName('')
       onClose()
-    } catch (error: any) {
-      setError(error.message || 'Failed to create workspace')
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to create workspace')
     } finally {
       setIsLoading(false)
     }

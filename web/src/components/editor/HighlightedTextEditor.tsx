@@ -255,7 +255,7 @@ export default function HighlightedTextEditor({
               let currentPos = 0
               let node
               
-              while (node = walker.nextNode()) {
+              while ((node = walker.nextNode()) !== null) {
                 const nodeLength = node.textContent?.length || 0
                 if (currentPos + nodeLength >= actualOffset) {
                   newRange.setStart(node, actualOffset - currentPos)
@@ -301,7 +301,7 @@ export default function HighlightedTextEditor({
     if (initialContent && editorRef.current && content !== initialContent) {
       setContent(initialContent)
     }
-  }, [initialContent])
+  }, [initialContent, content])
 
   // Cleanup typing timeout
   useEffect(() => {

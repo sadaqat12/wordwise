@@ -4,27 +4,38 @@ import { useAppStore, supabase } from '../store'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 
 export const useAuth = () => {
-  const { user, isAuthenticated, setUser } = useAppStore()
+  const { user, isAuthenticated, isAuthLoading, setUser, setAuthLoading } = useAppStore()
   const navigate = useNavigate()
 
   useEffect(() => {
     // Check for existing session on mount
     const checkSession = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession()
-      
-      if (error) {
-        console.error('Session check error:', error)
-        return
-      }
-      
-      if (session?.user) {
-        console.log('Existing session found:', session.user.email)
-        const user = {
-          id: session.user.id,
-          email: session.user.email!,
-          name: session.user.user_metadata?.name || session.user.email!.split('@')[0]
+      try {
+        console.log('🔍 Checking for existing session...')
+        const { data: { session }, error } = await supabase.auth.getSession()
+        
+        if (error) {
+          console.error('Session check error:', error)
+          setAuthLoading(false)
+          return
         }
-        setUser(user)
+        
+        if (session?.user) {
+          console.log('✅ Existing session found:', session.user.email)
+          const user = {
+            id: session.user.id,
+            email: session.user.email!,
+            name: session.user.user_metadata?.name || session.user.email!.split('@')[0]
+          }
+          setUser(user)
+        } else {
+          console.log('❌ No existing session found')
+        }
+      } catch (error) {
+        console.error('Session check failed:', error)
+      } finally {
+        console.log('✅ Session check complete, setting loading to false')
+        setAuthLoading(false)
       }
     }
 
@@ -52,26 +63,22 @@ export const useAuth = () => {
     )
 
     return () => subscription.unsubscribe()
-  }, [setUser, navigate])
+  }, [setUser, setAuthLoading, navigate])
 
-  return { user, isAuthenticated }
+  return { user, isAuthenticated, isAuthLoading }
 }
 
 export const useRequireAuth = () => {
-  const { isAuthenticated, user } = useAuth()
+  const { isAuthenticated, user, isAuthLoading } = useAuth()
   const navigate = useNavigate()
 
   useEffect(() => {
-    // Add a small delay to prevent race conditions during login
-    const timer = setTimeout(() => {
-      if (!isAuthenticated && !user) {
-        console.log('useRequireAuth: Redirecting to login, no user found')
-        navigate('/login')
-      }
-    }, 200)
-
-    return () => clearTimeout(timer)
-  }, [isAuthenticated, user, navigate])
+    // Only redirect if we're not loading and there's no user
+    if (!isAuthLoading && !isAuthenticated && !user) {
+      console.log('useRequireAuth: Redirecting to login, no authenticated user found')
+      navigate('/login')
+    }
+  }, [isAuthenticated, user, isAuthLoading, navigate])
 
   return isAuthenticated
 } 

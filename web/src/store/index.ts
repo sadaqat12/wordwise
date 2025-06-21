@@ -17,7 +17,7 @@ export interface User {
 export interface Workspace {
   id: string
   name: string
-  brand_voice_json: Record<string, any>
+  brand_voice_json: Record<string, unknown>
   owner_id: string
 }
 
@@ -26,9 +26,14 @@ export interface Document {
   workspace_id: string
   title: string
   content: string
-  persona_metadata: Record<string, any>
+  persona_metadata: Record<string, unknown>
   created_at: string
   updated_at: string
+  // Outcome tracking
+  sent_at?: string
+  outcome_status?: 'sent' | 'opened' | 'replied' | 'meeting_booked'
+  outcome_notes?: string
+  suggestions_used_count?: number
 }
 
 export interface Suggestion {
@@ -44,13 +49,14 @@ export interface Suggestion {
   position_end: number
 }
 
-export type Persona = 'general' | 'sales'
+// Persona type removed - everyone gets all features
 
 // Store interface
 interface AppStore {
   // Auth state
   user: User | null
   isAuthenticated: boolean
+  isAuthLoading: boolean
   
   // Workspace state
   currentWorkspace: Workspace | null
@@ -62,22 +68,21 @@ interface AppStore {
   
   // Editor state
   content: string
-  persona: Persona
   isAnalyzing: boolean
   suggestions: Suggestion[]
   
   // Actions
   setUser: (user: User | null) => void
+  setAuthLoading: (loading: boolean) => void
   setCurrentWorkspace: (workspace: Workspace | null) => void
   setWorkspaces: (workspaces: Workspace[]) => void
   setCurrentDocument: (document: Document | null) => void
   setDocuments: (documents: Document[]) => void
   setContent: (content: string) => void
-  setPersona: (persona: Persona) => void
   setIsAnalyzing: (isAnalyzing: boolean) => void
   setSuggestions: (suggestions: Suggestion[]) => void
   addSuggestion: (suggestion: Suggestion) => void
-  updateSuggestion: (id: string, updates: Partial<Suggestion>) => void
+  updateSuggestion: (id: string, updates: Partial<Suggestion>) => Promise<void>
   removeSuggestion: (id: string) => void
   
   // Auth actions (password-based)
@@ -90,10 +95,15 @@ interface AppStore {
   updateDocument: (id: string, updates: Partial<Document>) => Promise<boolean>
   deleteDocument: (id: string) => Promise<boolean>
   
+  // Outcome tracking actions
+  markDocumentSent: (id: string) => Promise<boolean>
+  updateDocumentOutcome: (id: string, status: Document['outcome_status'], notes?: string) => Promise<boolean>
+  updateSuggestionsUsedCount: (id: string, count: number) => Promise<boolean>
+  
   // AI actions
   analyzeText: (text: string, documentId?: string) => Promise<Suggestion[]>
-  rewriteText: (text: string, rewriteType: string, options?: Record<string, any>) => Promise<string | null>
-  personalizeText: (template: string, prospectData: Record<string, any>) => Promise<string | null>
+  rewriteText: (text: string, rewriteType: string, options?: Record<string, unknown>) => Promise<string | null>
+  personalizeText: (template: string, prospectData: Record<string, unknown>) => Promise<string | null>
   handleObjection: (objectionText: string, objectionType: string, context?: string) => Promise<string | null>
 }
 
@@ -102,23 +112,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
   // Initial state
   user: null,
   isAuthenticated: false,
+  isAuthLoading: true, // Start as loading until session check completes
   currentWorkspace: null,
   workspaces: [],
   currentDocument: null,
   documents: [],
   content: '',
-  persona: 'general',
   isAnalyzing: false,
   suggestions: [],
   
   // Basic setters
   setUser: (user) => set({ user, isAuthenticated: !!user }),
+  setAuthLoading: (loading) => set({ isAuthLoading: loading }),
   setCurrentWorkspace: (currentWorkspace) => set({ currentWorkspace }),
   setWorkspaces: (workspaces) => set({ workspaces }),
   setCurrentDocument: (currentDocument) => set({ currentDocument, content: currentDocument?.content || '' }),
   setDocuments: (documents) => set({ documents }),
   setContent: (content) => set({ content }),
-  setPersona: (persona) => set({ persona }),
   setIsAnalyzing: (isAnalyzing) => set({ isAnalyzing }),
   setSuggestions: (suggestions) => set({ suggestions }),
   
@@ -127,11 +137,34 @@ export const useAppStore = create<AppStore>((set, get) => ({
     suggestions: [...state.suggestions, suggestion]
   })),
   
-  updateSuggestion: (id, updates) => set((state) => ({
-    suggestions: state.suggestions.map(s => 
-      s.id === id ? { ...s, ...updates } : s
-    )
-  })),
+  updateSuggestion: async (id, updates) => {
+    // Update local state first for immediate UI feedback
+    set((state) => ({
+      suggestions: state.suggestions.map(s => 
+        s.id === id ? { ...s, ...updates } : s
+      )
+    }))
+    
+    // Also update the database
+    try {
+      const { error } = await supabase
+        .from('suggestions')
+        .update(updates)
+        .eq('id', id)
+      
+      if (error) {
+        console.error('Error updating suggestion in database:', error)
+        // Revert local state if database update fails
+        set((state) => ({
+          suggestions: state.suggestions.map(s => 
+            s.id === id ? { ...s, ...Object.fromEntries(Object.keys(updates).map(key => [key, s[key as keyof Suggestion]])) } : s
+          )
+        }))
+      }
+    } catch (error) {
+      console.error('Error updating suggestion:', error)
+    }
+  },
   
   removeSuggestion: (id) => set((state) => ({
     suggestions: state.suggestions.filter(s => s.id !== id)
@@ -155,8 +188,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       
       set({ user, isAuthenticated: !!user })
       return { user, error: null }
-    } catch (error: any) {
-      return { user: null, error: error.message }
+    } catch (error) {
+      return { user: null, error: error instanceof Error ? error.message : 'Sign in failed' }
     }
   },
   
@@ -179,8 +212,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       } : null
       
       return { user, error: null }
-    } catch (error: any) {
-      return { user: null, error: error.message }
+    } catch (error) {
+      return { user: null, error: error instanceof Error ? error.message : 'Sign up failed' }
     }
   },
   
@@ -189,6 +222,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({
       user: null,
       isAuthenticated: false,
+      isAuthLoading: false, // Ensure loading is false after sign out
       currentWorkspace: null,
       currentDocument: null,
       content: '',
@@ -270,9 +304,91 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
   
+  // Outcome tracking actions
+  markDocumentSent: async (id) => {
+    try {
+      const { error } = await supabase
+        .from('documents')
+        .update({ 
+          sent_at: new Date().toISOString(),
+          outcome_status: 'sent'
+        })
+        .eq('id', id)
+      
+      if (error) throw error
+      
+      const documents = get().documents.map(doc => 
+        doc.id === id ? { ...doc, sent_at: new Date().toISOString(), outcome_status: 'sent' as const } : doc
+      )
+      set({ documents })
+      
+      const currentDocument = get().currentDocument
+      if (currentDocument?.id === id) {
+        set({ currentDocument: { ...currentDocument, sent_at: new Date().toISOString(), outcome_status: 'sent' as const } })
+      }
+      
+      return true
+    } catch (error) {
+      console.error('Error marking document as sent:', error)
+      return false
+    }
+  },
+  
+  updateDocumentOutcome: async (id, status, notes) => {
+    try {
+      const { error } = await supabase
+        .from('documents')
+        .update({ outcome_status: status, outcome_notes: notes })
+        .eq('id', id)
+      
+      if (error) throw error
+      
+      const documents = get().documents.map(doc => 
+        doc.id === id ? { ...doc, outcome_status: status, outcome_notes: notes } : doc
+      )
+      set({ documents })
+      
+      const currentDocument = get().currentDocument
+      if (currentDocument?.id === id) {
+        set({ currentDocument: { ...currentDocument, outcome_status: status, outcome_notes: notes } })
+      }
+      
+      return true
+    } catch (error) {
+      console.error('Error updating document outcome:', error)
+      return false
+    }
+  },
+  
+  updateSuggestionsUsedCount: async (id, count) => {
+    try {
+      const { error } = await supabase
+        .from('documents')
+        .update({ suggestions_used_count: count })
+        .eq('id', id)
+      
+      if (error) throw error
+      
+      const documents = get().documents.map(doc => 
+        doc.id === id ? { ...doc, suggestions_used_count: count } : doc
+      )
+      set({ documents })
+      
+      const currentDocument = get().currentDocument
+      if (currentDocument?.id === id) {
+        set({ currentDocument: { ...currentDocument, suggestions_used_count: count } })
+      }
+      
+      return true
+    } catch (error) {
+      console.error('Error updating suggestions used count:', error)
+      return false
+    }
+  },
+  
   // AI actions
   analyzeText: async (text, documentId) => {
-    const { persona } = get()
+    const persona = 'sales' // Everyone gets sales features
     console.log('📡 Store analyzeText called:', {
       textLength: text.length,
       textPreview: text.substring(0, 100),
@@ -312,18 +428,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
         console.log('ℹ️ AI returned no suggestions for this text')
       }
       
-      const suggestions = rawSuggestions.map((s: any) => ({
-        id: crypto.randomUUID(), // Generate a unique ID
-        doc_id: documentId || '',
-        type: s.type,
-        original: s.original,
-        suggestion: s.suggestion,
-        persona_tag: s.persona_tag || persona,
-        status: 'pending', // Set default status
-        confidence: s.confidence,
-        position_start: s.position_start,
-        position_end: s.position_end
-      }))
+      const suggestions = rawSuggestions.map((s: unknown) => {
+        const suggestion = s as Record<string, unknown>
+        return {
+          id: suggestion.id || crypto.randomUUID(), // Use database ID if available, fallback to generated ID
+          doc_id: suggestion.doc_id || documentId || '',
+          type: suggestion.type,
+          original: suggestion.original,
+          suggestion: suggestion.suggestion,
+          persona_tag: suggestion.persona_tag || persona,
+          status: suggestion.status || 'pending', // Use database status if available
+          confidence: suggestion.confidence,
+          position_start: suggestion.position_start,
+          position_end: suggestion.position_end
+        }
+      })
       
       console.log('✅ Processed suggestions with status and ID:', suggestions)
       
@@ -344,18 +463,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
       
       return suggestions
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      const errorStack = error instanceof Error ? error.stack : undefined
       console.error('❌ Error analyzing text:', {
-        error: error.message,
-        stack: error.stack,
+        error: errorMessage,
+        stack: errorStack,
         details: error
       })
       set({ isAnalyzing: false })
       
       // Provide user-friendly error information
-      if (error.message?.includes('fetch')) {
+      if (errorMessage.includes('fetch')) {
         console.error('🌐 Network error - check internet connection')
-      } else if (error.message?.includes('auth')) {
+      } else if (errorMessage.includes('auth')) {
         console.error('🔐 Authentication error - user may need to log in again')
       } else {
         console.error('🤖 AI analysis error - the AI service may be temporarily unavailable')
@@ -371,7 +492,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         body: {
           text,
           rewrite_type: rewriteType,
-          persona: get().persona,
+          persona: 'sales', // Everyone gets sales features
           ...options
         }
       })
@@ -391,7 +512,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         body: {
           template_text: template,
           prospect_data: prospectData,
-          personalization_type: 'opener'
+          personalization_type: 'full_email'
         }
       })
       
