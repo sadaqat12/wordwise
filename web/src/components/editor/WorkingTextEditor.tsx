@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '../../store'
-import RichTextEditor from './RichTextEditor'
+import SlateRichTextEditor from './SlateRichTextEditor'
 import SuggestionsSidebar from './SuggestionsSidebar'
 
 interface WorkingTextEditorProps {
@@ -402,7 +402,7 @@ export default function WorkingTextEditor({
     <div className={`flex h-full ${className}`}>
       {/* Editor */}
       <div className="flex-1 relative">
-        <RichTextEditor
+        <SlateRichTextEditor
           initialContent={content}
           content={content}
           onContentChange={handleContentChange}
