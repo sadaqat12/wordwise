@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAppStore } from '../../store'
 import SlateRichTextEditor from './SlateRichTextEditor'
 import SuggestionsSidebar from './SuggestionsSidebar'
@@ -112,7 +112,15 @@ export default function WorkingTextEditor({
           onContentChange(newContent)
         }
         
-        // Don't auto-analyze for sales tool changes to preserve existing suggestions
+        // Clear suggestions and trigger analysis for partial text replacement
+        console.log('🧹 Clearing suggestions after partial text replacement via sales tools')
+        setSuggestions([])
+        setLastAnalyzedContent('')
+        
+        // Trigger fresh analysis after a brief delay
+        setTimeout(() => {
+          triggerAnalysis(newContent)
+        }, 500)
       }
     } else {
       // Replace entire document content (for sales tools)
@@ -127,9 +135,89 @@ export default function WorkingTextEditor({
         onContentChange(newText)
       }
       
-      // Don't auto-analyze to preserve existing suggestions
-      console.log('✅ Document content replaced successfully')
+      // IMPORTANT: Clear existing suggestions and trigger fresh analysis
+      console.log('🧹 Clearing all suggestions after sales tool usage')
+      setSuggestions([])
+      setLastAnalyzedContent('')
+      
+      // Trigger fresh analysis on the new content after a brief delay
+      setTimeout(() => {
+        console.log('🔍 Triggering fresh analysis after sales tool content replacement')
+        triggerAnalysis(newText)
+      }, 500)
+      
+      console.log('✅ Document content replaced successfully - fresh analysis scheduled')
     }
+  }
+
+  // Helper function to check if two suggestions overlap
+  const checkSuggestionOverlap = (suggestion1: typeof suggestions[0], suggestion2: typeof suggestions[0]): boolean => {
+    // Method 1: Position-based overlap detection (most reliable when positions are valid)
+    if (suggestion1.position_start !== undefined && suggestion1.position_end !== undefined &&
+        suggestion2.position_start !== undefined && suggestion2.position_end !== undefined) {
+      
+      const s1Start = suggestion1.position_start
+      const s1End = suggestion1.position_end
+      const s2Start = suggestion2.position_start
+      const s2End = suggestion2.position_end
+      
+      // Check if ranges overlap: (start1 <= end2) && (start2 <= end1)
+      const positionOverlap = (s1Start < s2End) && (s2Start < s1End)
+      
+      if (positionOverlap) {
+        console.log(`📍 Position overlap detected:`, {
+          suggestion1: `${suggestion1.id}: ${s1Start}-${s1End}`,
+          suggestion2: `${suggestion2.id}: ${s2Start}-${s2End}`
+        })
+        return true
+      }
+    }
+    
+    // Method 2: Text-based overlap detection (fallback when positions aren't reliable)
+    const text1 = suggestion1.original?.trim() || ''
+    const text2 = suggestion2.original?.trim() || ''
+    
+    if (text1.length === 0 || text2.length === 0) {
+      return false
+    }
+    
+    // Check if one suggestion's text is contained within the other
+    const text1ContainsText2 = text1.includes(text2)
+    const text2ContainsText1 = text2.includes(text1)
+    
+    if (text1ContainsText2 || text2ContainsText1) {
+      console.log(`📝 Text overlap detected:`, {
+        suggestion1: `${suggestion1.id}: "${text1}"`,
+        suggestion2: `${suggestion2.id}: "${text2}"`,
+        text1ContainsText2,
+        text2ContainsText1
+      })
+      return true
+    }
+    
+    // Method 3: Check if suggestions reference overlapping words in the content
+    if (content) {
+      const index1 = content.indexOf(text1)
+      const index2 = content.indexOf(text2)
+      
+      if (index1 !== -1 && index2 !== -1) {
+        const end1 = index1 + text1.length
+        const end2 = index2 + text2.length
+        
+        // Check if text ranges overlap in the actual content
+        const contentOverlap = (index1 < end2) && (index2 < end1)
+        
+        if (contentOverlap) {
+          console.log(`🔗 Content overlap detected:`, {
+            suggestion1: `${suggestion1.id}: content[${index1}-${end1}]`,
+            suggestion2: `${suggestion2.id}: content[${index2}-${end2}]`
+          })
+          return true
+        }
+      }
+    }
+    
+    return false
   }
 
   const handleAcceptSuggestion = (suggestionId: string) => {
@@ -152,43 +240,84 @@ export default function WorkingTextEditor({
       contentPreview: content.substring(0, 100) + '...'
     })
     
-    const originalText = suggestion.original.trim()
-    const replacementText = suggestion.suggestion.trim()
-    
-    // Use position data if available and valid
+    // Use position data if available and valid (PRESERVE EXACT WHITESPACE)
     if (suggestion.position_start >= 0 && suggestion.position_end > suggestion.position_start) {
       const start = suggestion.position_start
       const end = Math.min(suggestion.position_end, content.length)
       
-      // Verify the text at this position matches what we expect
-      const textAtPosition = content.substring(start, end)
-      if (textAtPosition === suggestion.original || textAtPosition.trim() === originalText) {
-        console.log('Using position-based replacement')
-        const beforeText = content.substring(0, start)
-        const afterText = content.substring(end)
-        const newContent = beforeText + replacementText + afterText
-        
-        applyContentChange(newContent, suggestion.original, replacementText, suggestionId)
-        return
-      } else {
-        console.warn('Position data mismatch, falling back to text search:', {
-          expected: suggestion.original,
-          actual: textAtPosition,
-          position: `${start}-${end}`
+      // ENHANCED VALIDATION: Check if position data is stale
+      if (end > content.length) {
+        console.warn('Position data is stale - end position exceeds content length:', {
+          positionEnd: suggestion.position_end,
+          contentLength: content.length,
+          suggestion: suggestionId
         })
+      } else {
+        // Verify the text at this position matches what we expect
+        const textAtPosition = content.substring(start, end)
+        
+        console.log('🔍 Position validation for suggestion:', {
+          suggestionId,
+          expected: `"${suggestion.original}"`,
+          actual: `"${textAtPosition}"`,
+          position: `${start}-${end}`,
+          exactMatch: textAtPosition === suggestion.original,
+          trimmedMatch: textAtPosition.trim() === suggestion.original.trim()
+        })
+        
+        // For position-based replacement, use EXACT text without trimming to preserve whitespace
+        if (textAtPosition === suggestion.original) {
+          console.log('✅ Using position-based replacement (exact match)')
+          const beforeText = content.substring(0, start)
+          const afterText = content.substring(end)
+          // Use suggestion text exactly as AI provided (preserves whitespace structure)
+          const newContent = beforeText + suggestion.suggestion + afterText
+          
+          applyContentChange(newContent, suggestion.original, suggestion.suggestion, suggestionId)
+          return
+        } else if (textAtPosition.trim() === suggestion.original.trim() && textAtPosition.trim().length > 0) {
+          console.log('✅ Using position-based replacement (trimmed match - preserving surrounding whitespace)')
+          const beforeText = content.substring(0, start)
+          const afterText = content.substring(end)
+          
+          // Preserve the whitespace structure from the original position
+          const leadingWhitespace = textAtPosition.match(/^\s*/)?.[0] || ''
+          const trailingWhitespace = textAtPosition.match(/\s*$/)?.[0] || ''
+          const newContent = beforeText + leadingWhitespace + suggestion.suggestion.trim() + trailingWhitespace + afterText
+          
+          applyContentChange(newContent, suggestion.original, suggestion.suggestion.trim(), suggestionId)
+          return
+        } else {
+          console.warn('❌ Position data is STALE - text mismatch, falling back to text search:', {
+            expected: suggestion.original,
+            actual: textAtPosition,
+            position: `${start}-${end}`,
+            suggestionId
+          })
+        }
       }
     }
     
-    // Fallback to text-based replacement for backwards compatibility
-    console.log('Using text-based replacement fallback')
+    // Fallback to text-based replacement - use trimmed versions for better matching
+    console.log('🔍 Using text-based replacement fallback (no position data or position was stale)')
+    
+    const originalText = suggestion.original.trim()
+    const replacementText = suggestion.suggestion.trim()
+    
+    console.log('🔎 Text search details:', {
+      searchingFor: `"${originalText}"`,
+      replacingWith: `"${replacementText}"`,
+      suggestionId
+    })
     
     // Find the first occurrence of the original text
     const searchIndex = content.indexOf(originalText)
     
     if (searchIndex === -1) {
-      console.error('Original text not found in content:', {
+      console.error('❌ Original text not found in content:', {
         searching: originalText,
-        contentPreview: content.substring(0, 100) + '...'
+        contentPreview: content.substring(0, 100) + '...',
+        suggestionId
       })
       // Try a more flexible search (case insensitive, extra whitespace)
       const flexibleSearch = content.toLowerCase().indexOf(originalText.toLowerCase())
@@ -196,7 +325,7 @@ export default function WorkingTextEditor({
         alert(`Could not find the text "${originalText}" in the document. The suggestion may be outdated.`)
         return
       } else {
-        console.log('Found text with case-insensitive search at position:', flexibleSearch)
+        console.log('✅ Found text with case-insensitive search at position:', flexibleSearch)
         // Use the flexible position but maintain original case
         const actualText = content.substring(flexibleSearch, flexibleSearch + originalText.length)
         const newContent = content.replace(actualText, replacementText)
@@ -205,10 +334,18 @@ export default function WorkingTextEditor({
       }
     }
     
-    // Apply the replacement
+    // Apply the text-based replacement (this should NOT add newlines)
+    console.log('✅ Found exact text match at position:', searchIndex)
     const beforeText = content.substring(0, searchIndex)
     const afterText = content.substring(searchIndex + originalText.length)
     const newContent = beforeText + replacementText + afterText
+    
+    console.log('📝 Text replacement preview:', {
+      before: beforeText.slice(-20),
+      original: originalText,
+      replacement: replacementText,
+      after: afterText.slice(0, 20)
+    })
     
     applyContentChange(newContent, originalText, replacementText, suggestionId)
   }
@@ -247,6 +384,23 @@ export default function WorkingTextEditor({
       refreshDatabaseSuggestions()
     })
     
+    // CRITICAL FIX: Remove overlapping suggestions when one is accepted
+    // When text changes, overlapping suggestions become invalid
+    console.log('🔍 Checking for overlapping suggestions to remove after accepting:', acceptedSuggestionId)
+    
+    const acceptedSuggestion = suggestions.find(s => s.id === acceptedSuggestionId)
+    if (acceptedSuggestion) {
+      const pendingSuggestions = suggestions.filter(s => s.status === 'pending' && s.id !== acceptedSuggestionId)
+      
+      pendingSuggestions.forEach(suggestion => {
+        const isOverlapping = checkSuggestionOverlap(acceptedSuggestion, suggestion)
+        if (isOverlapping) {
+          console.log(`🗑️ Removing overlapping suggestion ${suggestion.id}: "${suggestion.original}" overlaps with accepted "${acceptedSuggestion.original}"`)
+          updateSuggestion(suggestion.id, { status: 'rejected' })
+        }
+      })
+    }
+    
     // Update the suggestions used count for outcome tracking
     if (documentId) {
       // Count current accepted suggestions + 1 for this new one
@@ -254,7 +408,7 @@ export default function WorkingTextEditor({
       updateSuggestionsUsedCount(documentId, currentAcceptedCount + 1)
     }
     
-    console.log('✅ Applied suggestion - other suggestions preserved')
+    console.log('✅ Applied suggestion - other suggestions preserved with invalidated positions')
     
     // Clear any pending analysis timers to prevent re-analysis
     if (debounceRef.current) {
@@ -279,62 +433,8 @@ export default function WorkingTextEditor({
     })
   }
 
-  // Database suggestions are now handled by the store
-
-  // Refresh database suggestions when new analysis completes
-  useEffect(() => {
-    if (documentId && !isAnalyzing && suggestions.length > 0) {
-      // Analysis just completed, refresh database suggestions after a short delay
-      setTimeout(() => {
-        refreshDatabaseSuggestions()
-      }, 1000)
-    }
-  }, [isAnalyzing, documentId, suggestions.length])
-
-  // Initialize content and trigger analysis
-  useEffect(() => {
-    console.log('🔍 Document initialization effect triggered:', {
-      initialContent: initialContent?.substring(0, 100) + (initialContent?.length > 100 ? '...' : ''),
-      contentLength: initialContent?.length,
-      hasContent: !!initialContent,
-      documentId,
-      lastInitialized: initializedContentRef.current?.substring(0, 50) + '...',
-      isNewContent: initialContent !== initializedContentRef.current
-    })
-    
-    // Only initialize if this is actually new content (not just a content update from suggestion acceptance)
-    if (initialContent && initialContent !== initializedContentRef.current) {
-      console.log('📄 Setting up NEW document content (not just an update)')
-      setContent(initialContent)
-      // Clear any existing suggestions from previous documents
-      setSuggestions([])
-      setLastAnalyzedContent('') // Reset analysis tracking
-      initializedContentRef.current = initialContent // Track what we initialized
-      
-      // Trigger initial analysis if document has content (lowered threshold from 10 to 5)
-      if (initialContent.trim().length > 5) {
-        console.log('📝 Document loaded with content, triggering initial analysis...')
-        console.log('Content preview:', initialContent.substring(0, 200))
-        // Use a small delay to ensure component is fully mounted
-        setTimeout(() => {
-          triggerAnalysis(initialContent)
-        }, 500)
-      } else {
-        console.log('⚠️ Document content too short for analysis:', initialContent.length, 'characters')
-        setLastAnalyzedContent(initialContent) // Track even short content
-      }
-    } else if (!initialContent && initializedContentRef.current) {
-      console.log('❌ No initial content provided - clearing')
-      setSuggestions([]) // Clear suggestions if no content
-      setLastAnalyzedContent('') // Reset tracking
-      initializedContentRef.current = ''
-    } else {
-      console.log('⏭️ Skipping initialization - same content as before (suggestion update)')
-    }
-  }, [initialContent, documentId, setSuggestions]) // Keep both dependencies but use ref to prevent unnecessary clearing
-
   // Helper function to trigger AI analysis
-  const triggerAnalysis = async (textToAnalyze: string) => {
+  const triggerAnalysis = useCallback(async (textToAnalyze: string) => {
     console.log('🤖 triggerAnalysis called:', {
       textLength: textToAnalyze.length,
       textPreview: textToAnalyze.substring(0, 100),
@@ -375,7 +475,80 @@ export default function WorkingTextEditor({
       setSuggestions([])
       setLastAnalyzedContent(textToAnalyze)
     }
-  }
+  }, [documentId, isApplyingSuggestion, analyzeText, setSuggestions])
+
+  // Manual analysis handler for toolbar button and undo actions
+  const handleManualAnalysis = useCallback(() => {
+    console.log('🔄 Manual analysis triggered by user or undo action')
+    
+    // Clear any pending analysis timeouts first
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+    }
+    if (analysisRef.current) {
+      clearTimeout(analysisRef.current)
+    }
+    
+    // Trigger immediate analysis with current content
+    triggerAnalysis(content)
+  }, [content, triggerAnalysis])
+
+  // Database suggestions are now handled by the store
+
+  // Refresh database suggestions when new analysis completes
+  useEffect(() => {
+    if (documentId && !isAnalyzing && suggestions.length > 0) {
+      // Analysis just completed, refresh database suggestions after a short delay
+      setTimeout(() => {
+        refreshDatabaseSuggestions()
+      }, 1000)
+    }
+  }, [isAnalyzing, documentId, suggestions.length])
+
+  // Clear suggestions immediately when documentId changes (before content loads)
+  useEffect(() => {
+    console.log('🆔 DocumentId changed, clearing suggestions immediately:', documentId)
+    setSuggestions([])
+    setLastAnalyzedContent('')
+  }, [documentId, setSuggestions])
+
+  // Initialize content and trigger analysis
+  useEffect(() => {
+    console.log('🔍 Document initialization effect triggered:', {
+      initialContent: initialContent?.substring(0, 100) + (initialContent?.length > 100 ? '...' : ''),
+      contentLength: initialContent?.length,
+      hasContent: !!initialContent,
+      documentId,
+      lastInitialized: initializedContentRef.current?.substring(0, 50) + '...',
+      isNewContent: initialContent !== initializedContentRef.current
+    })
+    
+    // Always check if this is new content (including switching between documents)
+    const isNewDocument = initialContent !== initializedContentRef.current
+    
+    if (isNewDocument) {
+      console.log('📄 Document change detected - initializing')
+      setContent(initialContent || '')
+      
+      // Update tracking ref
+      initializedContentRef.current = initialContent || '' // Track what we initialized
+      
+      // Only trigger analysis if document has meaningful content
+      if (initialContent && initialContent.trim().length > 5) {
+        console.log('📝 Document loaded with content, triggering initial analysis...')
+        console.log('Content preview:', initialContent.substring(0, 200))
+        // Use a small delay to ensure component is fully mounted
+        setTimeout(() => {
+          triggerAnalysis(initialContent)
+        }, 500)
+      } else {
+        console.log('📝 Document is empty or too short for analysis:', initialContent?.length || 0, 'characters')
+        setLastAnalyzedContent(initialContent || '') // Track even short/empty content
+      }
+    } else {
+      console.log('⏭️ Same document - skipping initialization')
+    }
+  }, [initialContent, documentId, triggerAnalysis]) // Removed setSuggestions since it's handled in separate effect
 
 
 
@@ -409,6 +582,7 @@ export default function WorkingTextEditor({
           suggestions={suggestions}
           onSuggestionClick={(suggestion) => handleAcceptSuggestion(suggestion.id)}
           onTextSelection={handleTextSelection}
+          onManualAnalysis={handleManualAnalysis}
           placeholder="Start writing your document... (Try typing some text with intentional mistakes)"
           className="w-full h-full"
         />

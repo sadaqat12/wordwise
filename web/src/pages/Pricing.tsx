@@ -5,7 +5,8 @@ const Pricing = () => {
   const navigate = useNavigate()
   const { isAuthenticated } = useAuth()
 
-  const handleGetStarted = (_plan: string) => {
+  const handleGetStarted = (plan: string) => {
+    console.log('Getting started with plan:', plan)
     if (isAuthenticated) {
       navigate('/dashboard')
     } else {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSpeechToText } from '../../hooks/useSpeechToText'
 
 interface VoiceInputProps {
@@ -47,7 +47,7 @@ export default function VoiceInput({
     }
   }, [error, onError])
 
-  const handleToggleListening = () => {
+  const handleToggleListening = useCallback(() => {
     if (isListening) {
       stopListening()
     } else {
@@ -57,7 +57,7 @@ export default function VoiceInput({
         language: currentLanguage 
       })
     }
-  }
+  }, [isListening, stopListening, startListening, currentLanguage])
 
   // Expose toggle function to parent for keyboard shortcuts
   useEffect(() => {

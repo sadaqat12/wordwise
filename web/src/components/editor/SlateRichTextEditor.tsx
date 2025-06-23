@@ -93,6 +93,7 @@ interface SlateRichTextEditorProps {
   suggestions?: Suggestion[]
   onSuggestionClick?: (suggestion: Suggestion) => void
   onTextSelection?: () => void
+  onManualAnalysis?: () => void
   className?: string
   placeholder?: string
   content?: string
@@ -227,7 +228,7 @@ const slateValueToText = (value: Descendant[]): string => {
 }
 
 // Toolbar component
-const Toolbar: React.FC = () => {
+const Toolbar: React.FC<{ onManualAnalysis?: () => void }> = ({ onManualAnalysis }) => {
   const editor = useSlate()
   const [isBold, setIsBold] = useState(false)
   const [isItalic, setIsItalic] = useState(false)
@@ -260,7 +261,7 @@ const Toolbar: React.FC = () => {
 
   return (
     <div className="flex flex-wrap items-center gap-1 p-2 border-b border-gray-200 bg-gray-50">
-      {/* Undo/Redo */}
+      {/* Undo/Redo/Manual Analysis */}
       <div className="flex items-center gap-1 mr-2">
         <ToolbarButton
           active={false}
@@ -268,6 +269,12 @@ const Toolbar: React.FC = () => {
           onMouseDown={event => {
             event.preventDefault()
             editor.undo()
+            // Trigger analysis after undo
+            setTimeout(() => {
+              if (onManualAnalysis) {
+                onManualAnalysis()
+              }
+            }, 100)
           }}
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -280,6 +287,12 @@ const Toolbar: React.FC = () => {
           onMouseDown={event => {
             event.preventDefault()
             editor.redo()
+            // Trigger analysis after redo
+            setTimeout(() => {
+              if (onManualAnalysis) {
+                onManualAnalysis()
+              }
+            }, 100)
           }}
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -371,6 +384,22 @@ const Toolbar: React.FC = () => {
       {/* Voice Input */}
       <div className="flex items-center border-l border-gray-300 pl-2">
         <VoiceInputPlugin />
+      </div>
+
+      {/* Manual Analysis - positioned at the end */}
+      <div className="flex items-center border-l border-gray-300 pl-2 ml-2">
+        <button
+          title="Run Analysis (Ctrl+Shift+A)"
+          onMouseDown={event => {
+            event.preventDefault()
+            if (onManualAnalysis) {
+              onManualAnalysis()
+            }
+          }}
+          className="px-3 py-1 text-sm font-medium text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+        >
+          Analyze
+        </button>
       </div>
     </div>
   )
@@ -545,7 +574,8 @@ const SlateRichTextEditor: React.FC<SlateRichTextEditorProps> = React.memo(({
   onContentChange,
   suggestions = [],
   onSuggestionClick,
-  onTextSelection: _onTextSelection, // Unused for now, kept for API compatibility
+  // onTextSelection - unused for now, kept for API compatibility
+  onManualAnalysis,
   className = '',
   placeholder = 'Start writing your document...',
   content
@@ -577,6 +607,14 @@ const SlateRichTextEditor: React.FC<SlateRichTextEditorProps> = React.memo(({
         
         const newValue = textToSlateValue(content)
         
+        // Save current selection to restore later and prevent scrolling
+        const currentSelection = editor.selection
+        const shouldPreservePosition = currentSelection && !Range.isCollapsed(currentSelection)
+        
+        // Get current scroll position to restore later
+        const editorElement = ReactEditor.toDOMNode(editor, editor)?.parentElement as HTMLElement
+        const scrollTop = editorElement?.scrollTop || 0
+        
         // Force update the editor content while preserving history
         Editor.withoutNormalizing(editor, () => {
           // Clear existing content
@@ -593,11 +631,26 @@ const SlateRichTextEditor: React.FC<SlateRichTextEditorProps> = React.memo(({
         
         setValue(newValue)
         
-        // Reset the external update flag after a brief delay
+        // Restore scroll position to prevent jumping to bottom
         setTimeout(() => {
+          if (editorElement && scrollTop > 0) {
+            editorElement.scrollTop = scrollTop
+          }
+          
+          // Try to restore a reasonable cursor position (beginning of document for suggestion acceptance)
+          try {
+            if (!shouldPreservePosition) {
+              // For suggestion acceptance, place cursor at the beginning instead of end
+              Transforms.select(editor, Editor.start(editor, []))
+            }
+          } catch (error) {
+            // Ignore selection errors
+            console.log('Could not restore cursor position:', error)
+          }
+          
           setIsUpdatingExternally(false)
-          console.log('✅ External content update complete')
-        }, 100)
+          console.log('✅ External content update complete - scroll position preserved')
+        }, 50) // Reduced delay
       } else {
         // Just sync the content without remounting for minor discrepancies
         const newValue = textToSlateValue(content)
@@ -904,8 +957,18 @@ const SlateRichTextEditor: React.FC<SlateRichTextEditorProps> = React.memo(({
         CustomEditor.toggleUnderlineMark(editor)
         break
       }
+      case 'A': {
+        // Ctrl+Shift+A for manual analysis
+        if (event.shiftKey) {
+          event.preventDefault()
+          if (onManualAnalysis) {
+            onManualAnalysis()
+          }
+        }
+        break
+      }
     }
-  }, [editor])
+  }, [editor, onManualAnalysis])
 
   // Cleanup timeouts on unmount
   useEffect(() => {
@@ -927,7 +990,7 @@ const SlateRichTextEditor: React.FC<SlateRichTextEditorProps> = React.memo(({
           initialValue={value} 
           onValueChange={handleChange}
         >
-          <Toolbar />
+          <Toolbar onManualAnalysis={onManualAnalysis} />
           <div 
             className="relative p-6 min-h-[500px]"
           >

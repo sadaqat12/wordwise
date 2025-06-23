@@ -79,7 +79,8 @@ const Editor = () => {
           setSavingState('idle')
         }, 3000)
       }
-    } catch (error) {
+    } catch (saveError) {
+      console.error('Error saving document:', saveError)
       setSavingState('error')
       
       // Reset to idle after 3 seconds
