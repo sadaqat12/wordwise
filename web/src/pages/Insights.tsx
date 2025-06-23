@@ -3,6 +3,7 @@ import { useAppStore, supabase } from '../store'
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PerformancePanel from '../components/analytics/PerformancePanel'
+import UserGuide from '../components/ui/UserGuide'
 import { calculateWritingMetrics } from '../utils/writingAnalytics'
 import type { WritingMetrics } from '../utils/writingAnalytics'
 import type { Suggestion } from '../store'
@@ -17,6 +18,7 @@ const Insights = () => {
   const [allSuggestions, setAllSuggestions] = useState<Suggestion[]>([])
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(true)
   const [isCleaningUp, setIsCleaningUp] = useState(false)
+  const [isUserGuideOpen, setIsUserGuideOpen] = useState(false)
 
   // Get the selected document or most recent document
   const selectedDocument = selectedDocumentId 
@@ -152,6 +154,16 @@ const Insights = () => {
               </p>
             </div>
             <div className="flex gap-3">
+              <button
+                onClick={() => setIsUserGuideOpen(true)}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                title="Open User Guide"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Help
+              </button>
               <button
                 onClick={handleCleanupDatabase}
                 disabled={isCleaningUp}
@@ -391,6 +403,12 @@ const Insights = () => {
           </div>
         )}
       </div>
+      
+      {/* User Guide Modal */}
+      <UserGuide 
+        isOpen={isUserGuideOpen} 
+        onClose={() => setIsUserGuideOpen(false)} 
+      />
     </div>
   )
 }

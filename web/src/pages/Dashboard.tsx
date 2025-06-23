@@ -5,7 +5,10 @@ import { useAppStore, supabase } from '../store'
 import WorkspaceSelector from '../components/workspace/WorkspaceSelector'
 import CreateWorkspaceModal from '../components/workspace/CreateWorkspaceModal'
 import WritingSummary from '../components/analytics/WritingSummary'
+import UserGuide from '../components/ui/UserGuide'
+import { calculateWritingMetrics } from '../utils/writingAnalytics'
 import type { Suggestion, Document } from '../store'
+import type { WritingMetrics } from '../utils/writingAnalytics'
 
 const Dashboard = () => {
   const isAuthenticated = useRequireAuth()
@@ -28,9 +31,12 @@ const Dashboard = () => {
   console.log('Dashboard render - isAuthenticated:', isAuthenticated, 'user:', user?.email)
 
   const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false)
+  const [isUserGuideOpen, setIsUserGuideOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [allSuggestions, setAllSuggestions] = useState<Suggestion[]>([])
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(true)
+  const [documentMetrics, setDocumentMetrics] = useState<Record<string, WritingMetrics>>({})
+  const [isCalculatingMetrics, setIsCalculatingMetrics] = useState(false)
 
   useEffect(() => {
     if (!isAuthenticated || !user) return
@@ -116,6 +122,69 @@ const Dashboard = () => {
 
     fetchAllSuggestions()
   }, [documents])
+
+  // Calculate writing metrics for all documents
+  useEffect(() => {
+    const calculateAllMetrics = async () => {
+      if (documents.length === 0 || isLoadingSuggestions) {
+        setDocumentMetrics({})
+        return
+      }
+
+      setIsCalculatingMetrics(true)
+      const newMetrics: Record<string, WritingMetrics> = {}
+
+      try {
+        // Calculate metrics for each document in parallel
+        await Promise.all(
+          documents.map(async (doc) => {
+            if (doc.content && doc.content.trim().length > 0) {
+              const documentSuggestions = allSuggestions.filter(s => 
+                s.doc_id === doc.id && s.status === 'pending'
+              )
+              
+              try {
+                const metrics = await calculateWritingMetrics(doc.content, documentSuggestions.length)
+                newMetrics[doc.id] = metrics
+              } catch (error) {
+                console.error(`Error calculating metrics for document ${doc.id}:`, error)
+                // Fallback to simple calculation if the sophisticated one fails
+                const fallbackScore = documentSuggestions.length === 0 ? 100 : Math.max(5, 70 - (documentSuggestions.length * 5))
+                const wordCount = doc.content.split(/\s+/).filter((w: string) => w.length > 0).length
+                newMetrics[doc.id] = {
+                  textScore: fallbackScore,
+                  words: wordCount,
+                  characters: doc.content.length,
+                  sentences: Math.max(1, doc.content.split(/[.!?]+/).filter(s => s.trim()).length),
+                  readingTime: Math.max(1, Math.round((wordCount / 200) * 60)),
+                  speakingTime: Math.max(1, Math.round((wordCount / 150) * 60)),
+                  averageWordsPerSentence: 0,
+                  averageCharactersPerWord: 0,
+                  readabilityScore: 0,
+                  readabilityLevel: 'Unknown',
+                  uniqueWordsPercentage: 0,
+                  rareWordsPercentage: 0,
+                  vocabularyScore: 0,
+                  wordLengthRating: 'average',
+                  sentenceLengthRating: 'average',
+                  uniqueWordsRating: 'average',
+                  rareWordsRating: 'average'
+                }
+              }
+            }
+          })
+        )
+
+        setDocumentMetrics(newMetrics)
+      } catch (error) {
+        console.error('Error calculating document metrics:', error)
+      } finally {
+        setIsCalculatingMetrics(false)
+      }
+    }
+
+    calculateAllMetrics()
+  }, [documents, allSuggestions, isLoadingSuggestions])
 
   const handleCreateDocument = async () => {
     if (!currentWorkspace) return
@@ -268,6 +337,16 @@ const Dashboard = () => {
               <div className="flex items-center space-x-4">
                 <span className="text-sm text-gray-600">Welcome, {user?.name}</span>
                 <button
+                  onClick={() => setIsUserGuideOpen(true)}
+                  className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                  title="Open User Guide"
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Help
+                </button>
+                <button
                   onClick={handleSignOut}
                   className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
                 >
@@ -327,6 +406,16 @@ const Dashboard = () => {
             
             <div className="flex items-center space-x-4">
               <span className="text-sm text-gray-600">Welcome, {user?.name}</span>
+              <button
+                onClick={() => setIsUserGuideOpen(true)}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                title="Open User Guide"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Help
+              </button>
               <button
                 onClick={() => navigate('/insights')}
                 className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
@@ -403,14 +492,8 @@ const Dashboard = () => {
             {documents.map((doc) => {
                               const hasContent = doc.content && doc.content.trim().length > 0
                 
-                // Get the actual suggestions count for this document to calculate accurate score
-                const documentSuggestions = allSuggestions.filter(s => 
-                  s.doc_id === doc.id && s.status === 'pending'
-                )
-                // Simple fallback metrics for dashboard display
-                const fallbackScore = hasContent ? (documentSuggestions.length === 0 ? 100 : Math.max(5, 70 - (documentSuggestions.length * 5))) : 0
-                const wordCount = hasContent ? doc.content.split(/\s+/).filter((w: string) => w.length > 0).length : 0
-                const metrics = hasContent ? { textScore: fallbackScore, words: wordCount } : null
+                // Use properly calculated metrics instead of fallback
+                const metrics = hasContent ? documentMetrics[doc.id] : null
               
               return (
                 <div
@@ -462,11 +545,11 @@ const Dashboard = () => {
                       )}
                     </div>
                     
-                    {metrics && !isLoadingSuggestions ? (
+                    {metrics && !isLoadingSuggestions && !isCalculatingMetrics ? (
                       <WritingSummary metrics={metrics} compact={true} />
-                    ) : isLoadingSuggestions ? (
+                    ) : (isLoadingSuggestions || isCalculatingMetrics) ? (
                       <div className="text-xs text-gray-400 animate-pulse">
-                        Loading metrics...
+                        {isLoadingSuggestions ? 'Loading suggestions...' : 'Calculating metrics...'}
                       </div>
                     ) : (
                       <div className="text-xs text-gray-400">
@@ -511,11 +594,17 @@ const Dashboard = () => {
                           </button>
                         )}
                       </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+                            )}
+      </div>
+      
+      {/* User Guide Modal */}
+      <UserGuide 
+        isOpen={isUserGuideOpen} 
+        onClose={() => setIsUserGuideOpen(false)} 
+      />
+    </div>
+  )
+})}
           </div>
         )}
       </main>

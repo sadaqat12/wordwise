@@ -2,6 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useRequireAuth } from '../hooks/useAuth'
 import { useDocument } from '../hooks/useDocument'
 import WorkingTextEditor from '../components/editor/WorkingTextEditor'
+import UserGuide from '../components/ui/UserGuide'
 import { useAppStore } from '../store'
 import { useState, useRef, useEffect, useCallback } from 'react'
 
@@ -20,6 +21,9 @@ const Editor = () => {
   // Auto-save state
   const [savingState, setSavingState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  
+  // User guide state
+  const [isUserGuideOpen, setIsUserGuideOpen] = useState(false)
 
   // Sync title value with document
   useEffect(() => {
@@ -75,7 +79,8 @@ const Editor = () => {
           setSavingState('idle')
         }, 3000)
       }
-    } catch (error) {
+    } catch (saveError) {
+      console.error('Error saving document:', saveError)
       setSavingState('error')
       
       // Reset to idle after 3 seconds
@@ -248,6 +253,17 @@ const Editor = () => {
               )}
               
               <button 
+                onClick={() => setIsUserGuideOpen(true)}
+                className="text-sm text-indigo-600 hover:text-indigo-900 transition-colors flex items-center"
+                title="Open User Guide"
+              >
+                <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Help
+              </button>
+              
+              <button 
                 onClick={() => navigate('/insights')}
                 className="text-sm text-indigo-600 hover:text-indigo-900 transition-colors"
               >
@@ -276,6 +292,12 @@ const Editor = () => {
           />
         </div>
       </div>
+      
+      {/* User Guide Modal */}
+      <UserGuide 
+        isOpen={isUserGuideOpen} 
+        onClose={() => setIsUserGuideOpen(false)} 
+      />
     </div>
   )
 }
